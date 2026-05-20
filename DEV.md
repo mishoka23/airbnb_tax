@@ -84,6 +84,8 @@ Copy-Item .env.example .env
 
 The Docker environment uses PostgreSQL and Redis. When running the backend directly without `DATABASE_URL`, Django falls back to local SQLite for lightweight development checks.
 
+The root `requirements.txt` is a project-level overview. It includes `backend/requirements.txt` for Python installation and documents the non-Python technology requirements in comments.
+
 ## Docker Development
 
 Run the full local stack:

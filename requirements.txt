@@ -1,0 +1,33 @@
+# Project requirements overview
+#
+# Python dependencies are installed through this file by including the backend
+# requirements below:
+#
+#   pip install -r requirements.txt
+#
+# Non-Python technologies required by the project:
+#
+# - Python 3.13+ for the Django backend
+# - Node.js 22+ and npm 11+ for the Next.js frontend
+# - PostgreSQL 16 for production/local Docker database
+# - Redis 7 for Celery broker/result backend, cache, locks, and temporary state
+# - Docker 24+ and Docker Compose for the full local stack
+#
+# Frontend libraries are managed in frontend/package.json:
+#
+# - Next.js 15
+# - React 19
+# - lucide-react
+# - TypeScript
+# - ESLint
+# - eslint-config-next
+#
+# Infrastructure/config files:
+#
+# - docker-compose.yml for local PostgreSQL, Redis, backend, worker, and frontend
+# - .env.example for local environment variables
+# - backend/requirements.txt for backend Python packages
+# - frontend/package.json for frontend Node packages
+
+-r backend/requirements.txt
+
