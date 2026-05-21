@@ -66,6 +66,7 @@ const steps = [
   },
 ];
 
+
 export default function Home() {
   const [audience, setAudience] = useState<Audience>("host");
   const [city, setCity] = useState("Sofia");
@@ -73,15 +74,31 @@ export default function Home() {
   const [properties, setProperties] = useState("3");
   const [showMenu, setShowMenu] = useState(false);
   const [leadMessage, setLeadMessage] = useState("");
+  const [results, setResults] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
 
-  function submitSearch(event: FormEvent<HTMLFormElement>) {
+  async function submitSearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const monthText = month || "the next month";
-    setLeadMessage(
-      audience === "host"
-        ? `We will look for verified cleaners around ${city} for ${properties || "your"} properties in ${monthText}.`
-        : `We will show available host demand around ${city} for ${monthText}.`,
-    );
+    setLeadMessage("");
+    setLoading(true);
+    setResults([]);
+    try {
+      // Placeholder: Replace with your real API endpoint
+      // Example: `/api/cleaners?city=${city}&month=${month}`
+      // For now, filter featuredCleaners as a demo
+      let filtered = featuredCleaners.filter((cleaner) =>
+        cleaner.area.toLowerCase().includes(city.toLowerCase())
+      );
+      // Simulate network delay
+      await new Promise((res) => setTimeout(res, 500));
+      setResults(filtered);
+      if (filtered.length === 0) {
+        setLeadMessage("No cleaners found for your search.");
+      }
+    } catch (err) {
+      setLeadMessage("Error fetching results.");
+    }
+    setLoading(false);
   }
 
   return (
@@ -182,6 +199,19 @@ export default function Home() {
           </form>
 
           {leadMessage ? <p className="lead-message">{leadMessage}</p> : null}
+          {loading && <p>Loading...</p>}
+          {results.length > 0 && (
+            <div className="search-results">
+              <h3>Available Cleaners</h3>
+              <ul>
+                {results.map((cleaner) => (
+                  <li key={cleaner.name}>
+                    <strong>{cleaner.name}</strong> ({cleaner.area}) - {cleaner.type} | Rating: {cleaner.rating}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
       </section>
 
