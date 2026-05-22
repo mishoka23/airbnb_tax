@@ -2,9 +2,10 @@
 Tests for notifications.tasks.send_admin_new_account_email.
 
 Uses Django's in-memory email backend so no real SMTP connection is made.
-Celery is not running — tasks execute synchronously via the fallback stub
-(or via .apply() when Celery IS installed with CELERY_TASK_ALWAYS_EAGER).
+Task unit tests execute synchronously via .apply(); signup integration tests
+enable Celery eager mode only for the test process.
 """
+
 from django.core import mail
 from django.test import TestCase, override_settings
 from django.urls import reverse
@@ -156,15 +157,17 @@ class SendAdminNewAccountEmailTaskTests(TestCase):
         self.assertIn("active_admin@example.com", recipients)
 
 
-@override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+@override_settings(
+    EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+    CELERY_TASK_ALWAYS_EAGER=True,
+    CELERY_TASK_EAGER_PROPAGATES=True,
+)
 class SignupEmailTriggerTests(TestCase):
     """
     Integration test: signing up via the API fires the admin email task.
 
-    Without a real Celery worker, .delay() runs the task synchronously via
-    the fallback stub (when Celery is not installed) or via
-    CELERY_TASK_ALWAYS_EAGER (when Celery IS installed but no broker is
-    running). Either way the locmem backend captures the outbound message.
+    Celery eager mode is scoped to this test class so .delay() runs inside
+    the test process and the locmem backend captures the outbound message.
     """
 
     def setUp(self):
