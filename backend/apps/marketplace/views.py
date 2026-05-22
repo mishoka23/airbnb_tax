@@ -1,6 +1,8 @@
 from django.db.models import Q
 from django.contrib.auth import get_user_model
-from rest_framework import status, viewsets
+from django.utils import timezone
+from django.utils.dateparse import parse_datetime
+from rest_framework import permissions, status, views, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
@@ -12,6 +14,7 @@ from apps.marketplace.serializers import (
     CleanerApplicationSerializer,
     CleaningBatchSerializer,
     CleaningJobSerializer,
+    MarketplaceCalendarItemSerializer,
 )
 from apps.marketplace.services import (
     MarketplaceError,
@@ -24,6 +27,82 @@ from apps.marketplace.services import (
 
 
 User = get_user_model()
+
+
+def parse_calendar_bound(value):
+    if not value:
+        return None
+    parsed = parse_datetime(value)
+    if parsed is None:
+        return None
+    if timezone.is_naive(parsed):
+        return timezone.make_aware(parsed, timezone.get_current_timezone())
+    return parsed
+
+
+def in_calendar_window(queryset, start, end, prefix=""):
+    if start is not None:
+        queryset = queryset.filter(**{f"{prefix}scheduled_end__gte": start})
+    if end is not None:
+        queryset = queryset.filter(**{f"{prefix}scheduled_start__lt": end})
+    return queryset
+
+
+def job_calendar_payload(job, item_type, user, application=None, assignment=None):
+    completed_at = getattr(assignment, "completed_at", None)
+    price = job.agreed_price or job.proposed_price
+    if application is not None:
+        price = application.proposed_price or price
+    if assignment is not None:
+        price = assignment.agreed_price or price
+
+    return {
+        "id": f"{item_type}:{job.id}:{getattr(application, 'id', '') or getattr(assignment, 'id', '') or job.id}",
+        "item_type": item_type,
+        "job": job.id,
+        "application": getattr(application, "id", None),
+        "assignment": getattr(assignment, "id", None),
+        "title": job.title,
+        "starts_at": job.scheduled_start,
+        "ends_at": job.scheduled_end,
+        "currency": job.currency,
+        "price": price,
+        "property_name": job.property.name,
+        "property_city": job.property.city,
+        "host_name": job.host.get_full_name() or job.host.get_username(),
+        "job_status": job.status,
+        "application_status": getattr(application, "status", ""),
+        "completed_at": completed_at,
+        "can_apply": item_type == "open_job" and job.status == CleaningJob.Status.OPEN and user_can_apply_to_calendar_job(user),
+        "can_complete": user_can_complete_calendar_assignment(user, assignment, job),
+    }
+
+
+def get_job_assignment(job):
+    try:
+        return job.assignment
+    except Assignment.DoesNotExist:
+        return None
+
+
+def user_can_apply_to_calendar_job(user):
+    if user.is_agency:
+        return True
+    if not user.is_cleaner:
+        return False
+    profile = getattr(user, "cleaner_profile", None)
+    return bool(profile and profile.is_verified)
+
+
+def user_can_complete_calendar_assignment(user, assignment, job):
+    if assignment is None or assignment.completed_at is not None or job.status != CleaningJob.Status.ASSIGNED:
+        return False
+    return (
+        user.is_platform_admin
+        or user.id == job.host_id
+        or user.id == assignment.cleaner_id
+        or user.id == assignment.assigned_member_id
+    )
 
 
 class MarketplaceQuerysetMixin:
@@ -44,6 +123,137 @@ class MarketplaceQuerysetMixin:
         if user.is_agency:
             return queryset.filter(Q(status=CleaningJob.Status.OPEN) | Q(assignment__cleaner=user)).distinct()
         return queryset.none()
+
+
+class MarketplaceCalendarView(views.APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        if not user.is_approved:
+            return Response([])
+
+        start = parse_calendar_bound(request.query_params.get("start"))
+        end = parse_calendar_bound(request.query_params.get("end"))
+        items = []
+
+        if user.is_platform_admin:
+            jobs = in_calendar_window(
+                CleaningJob.objects.select_related("property", "host", "assignment").all(),
+                start,
+                end,
+            )
+            for job in jobs:
+                assignment = get_job_assignment(job)
+                item_type = "assignment" if assignment else "open_job"
+                items.append(job_calendar_payload(job, item_type, user, assignment=assignment))
+            serializer = MarketplaceCalendarItemSerializer(items, many=True)
+            return Response(serializer.data)
+
+        if user.is_host:
+            jobs = in_calendar_window(
+                CleaningJob.objects.select_related("property", "host", "assignment").filter(host=user),
+                start,
+                end,
+            )
+            for job in jobs:
+                assignment = get_job_assignment(job)
+                item_type = "assignment" if assignment else "open_job"
+                items.append(job_calendar_payload(job, item_type, user, assignment=assignment))
+            serializer = MarketplaceCalendarItemSerializer(items, many=True)
+            return Response(serializer.data)
+
+        if user.is_cleaner:
+            assignment_queryset = in_calendar_window(
+                Assignment.objects.select_related("job", "job__property", "job__host", "application").filter(
+                    Q(cleaner=user) | Q(assigned_member=user)
+                ),
+                start,
+                end,
+                "job__",
+            )
+            assigned_job_ids = set()
+            for assignment in assignment_queryset:
+                assigned_job_ids.add(assignment.job_id)
+                items.append(
+                    job_calendar_payload(
+                        assignment.job,
+                        "assignment",
+                        user,
+                        application=assignment.application,
+                        assignment=assignment,
+                    )
+                )
+
+            application_queryset = in_calendar_window(
+                CleanerApplication.objects.select_related("job", "job__property", "job__host").filter(cleaner=user),
+                start,
+                end,
+                "job__",
+            ).exclude(job_id__in=assigned_job_ids)
+            applied_job_ids = set()
+            for application in application_queryset:
+                applied_job_ids.add(application.job_id)
+                items.append(job_calendar_payload(application.job, "application", user, application=application))
+
+            open_jobs = in_calendar_window(
+                CleaningJob.objects.select_related("property", "host")
+                .filter(status=CleaningJob.Status.OPEN)
+                .exclude(id__in=assigned_job_ids | applied_job_ids),
+                start,
+                end,
+            )
+            for job in open_jobs:
+                items.append(job_calendar_payload(job, "open_job", user))
+
+            serializer = MarketplaceCalendarItemSerializer(items, many=True)
+            return Response(serializer.data)
+
+        if user.is_agency:
+            assignment_queryset = in_calendar_window(
+                Assignment.objects.select_related("job", "job__property", "job__host", "application").filter(cleaner=user),
+                start,
+                end,
+                "job__",
+            )
+            assigned_job_ids = set()
+            for assignment in assignment_queryset:
+                assigned_job_ids.add(assignment.job_id)
+                items.append(
+                    job_calendar_payload(
+                        assignment.job,
+                        "assignment",
+                        user,
+                        application=assignment.application,
+                        assignment=assignment,
+                    )
+                )
+
+            application_queryset = in_calendar_window(
+                CleanerApplication.objects.select_related("job", "job__property", "job__host").filter(cleaner=user),
+                start,
+                end,
+                "job__",
+            ).exclude(job_id__in=assigned_job_ids)
+            applied_job_ids = set()
+            for application in application_queryset:
+                applied_job_ids.add(application.job_id)
+                items.append(job_calendar_payload(application.job, "application", user, application=application))
+
+            open_jobs = in_calendar_window(
+                CleaningJob.objects.select_related("property", "host")
+                .filter(status=CleaningJob.Status.OPEN)
+                .exclude(id__in=assigned_job_ids | applied_job_ids),
+                start,
+                end,
+            )
+            for job in open_jobs:
+                items.append(job_calendar_payload(job, "open_job", user))
+
+            serializer = MarketplaceCalendarItemSerializer(items, many=True)
+            return Response(serializer.data)
+
+        return Response([])
 
 
 class CleaningBatchViewSet(viewsets.ModelViewSet):
@@ -110,7 +320,7 @@ class CleanerApplicationViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        queryset = CleanerApplication.objects.select_related("job", "cleaner", "job__host")
+        queryset = CleanerApplication.objects.select_related("job", "cleaner", "job__host", "job__property")
         if user.is_platform_admin:
             return queryset
         if not user.is_approved:
@@ -148,7 +358,7 @@ class AssignmentViewSet(viewsets.ReadOnlyModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        queryset = Assignment.objects.select_related("job", "cleaner", "application", "job__host")
+        queryset = Assignment.objects.select_related("job", "job__property", "cleaner", "application", "job__host")
         if user.is_platform_admin:
             return queryset
         if not user.is_approved:

@@ -1,7 +1,7 @@
 from datetime import timedelta
 
 from django.conf import settings
-from django.contrib.auth.models import AbstractUser
+from django.contrib.auth.models import AbstractUser, UserManager
 from django.db import models
 from django.utils import timezone
 
@@ -10,6 +10,13 @@ from apps.core.models import TimeStampedModel
 
 def default_invitation_expires_at():
     return timezone.now() + timedelta(days=14)
+
+
+class PlatformUserManager(UserManager):
+    def create_superuser(self, username, email=None, password=None, **extra_fields):
+        extra_fields.setdefault("role", self.model.Role.ADMIN)
+        extra_fields.setdefault("account_status", self.model.AccountStatus.APPROVED)
+        return super().create_superuser(username, email, password, **extra_fields)
 
 
 class User(AbstractUser):
@@ -52,6 +59,8 @@ class User(AbstractUser):
     email_verified_at = models.DateTimeField(null=True, blank=True)
     phone_verified_at = models.DateTimeField(null=True, blank=True)
 
+    objects = PlatformUserManager()
+
     @property
     def is_host(self) -> bool:
         return self.role == self.Role.HOST
@@ -77,6 +86,27 @@ class User(AbstractUser):
         self.approved_at = timezone.now()
         self.approved_by = approved_by
         self.save(update_fields=["account_status", "approved_at", "approved_by"])
+
+    def save(self, *args, **kwargs):
+        if self.role == self.Role.ADMIN or self.is_superuser:
+            self.role = self.Role.ADMIN
+            self.account_status = self.AccountStatus.APPROVED
+            self.is_staff = True
+            self.is_superuser = True
+            if self.approved_at is None:
+                self.approved_at = timezone.now()
+
+            update_fields = kwargs.get("update_fields")
+            if update_fields is not None:
+                kwargs["update_fields"] = set(update_fields) | {
+                    "role",
+                    "account_status",
+                    "is_staff",
+                    "is_superuser",
+                    "approved_at",
+                }
+
+        super().save(*args, **kwargs)
 
 
 class HostProfile(TimeStampedModel):

@@ -139,13 +139,18 @@ export default function Home() {
           {!loadingAuth && (
             currentUser ? (
               <>
-                {currentUser.role === "admin" ? (
+                {currentUser.is_platform_admin ? (
                   <a className="text-link" href="/admin">
                     <AdminIcon size={15} aria-hidden />
                     Admin panel
                   </a>
                 ) : currentUser.role === "host" ? (
                   <a className="text-link" href="/host">
+                    <LayoutDashboard size={15} aria-hidden />
+                    Dashboard
+                  </a>
+                ) : currentUser.role === "cleaner" ? (
+                  <a className="text-link" href="/cleaner">
                     <LayoutDashboard size={15} aria-hidden />
                     Dashboard
                   </a>
@@ -158,7 +163,7 @@ export default function Home() {
                 <span className="user-chip">
                   {currentUser.first_name || currentUser.email.split("@")[0]}
                   <span className="user-chip-dot" aria-hidden>·</span>
-                  {roleLabel(currentUser.role)}
+                  {currentUser.is_platform_admin ? "Admin" : roleLabel(currentUser.role)}
                 </span>
                 <button
                   className="text-link logout-trigger"

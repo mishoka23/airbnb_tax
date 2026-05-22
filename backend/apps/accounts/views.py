@@ -103,7 +103,7 @@ class UserViewSet(viewsets.ModelViewSet):
 
     def get_permissions(self):
         if self.action == "create":
-            return [permissions.AllowAny()]
+            return [IsPlatformAdmin()]
         if self.action in {"approve", "reject", "suspend"}:
             return [IsPlatformAdmin()]
         return [permissions.IsAuthenticated()]

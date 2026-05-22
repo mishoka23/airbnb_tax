@@ -3,6 +3,7 @@ from decimal import Decimal
 
 from django.test import TestCase
 from django.utils import timezone
+from rest_framework.test import APIClient
 
 from apps.accounts.models import CleanerProfile, HostProfile, User
 from apps.feedback.services import submit_review
@@ -20,6 +21,7 @@ from apps.properties.models import Property
 
 class MarketplaceServiceTests(TestCase):
     def setUp(self):
+        self.api_client = APIClient()
         self.host = User.objects.create_user(
             username="host",
             password="password123",
@@ -108,3 +110,29 @@ class MarketplaceServiceTests(TestCase):
         self.assertEqual(completed.status, CleaningJob.Status.COMPLETED)
         self.assertEqual(review.rating, 5)
         self.assertEqual(self.cleaner.cleaner_profile.average_rating, 5)
+
+    def test_cleaner_calendar_tracks_open_application_and_assignment_states(self):
+        publish_job(self.job)
+        self.api_client.force_authenticate(self.cleaner)
+        params = {
+            "start": (timezone.now() - timedelta(days=1)).isoformat(),
+            "end": (timezone.now() + timedelta(days=3)).isoformat(),
+        }
+
+        open_response = self.api_client.get("/api/marketplace/calendar/", params)
+        self.assertEqual(open_response.status_code, 200)
+        self.assertEqual(open_response.data[0]["item_type"], "open_job")
+        self.assertTrue(open_response.data[0]["can_apply"])
+
+        application = submit_application(job=self.job, cleaner=self.cleaner)
+        application_response = self.api_client.get("/api/marketplace/calendar/", params)
+        self.assertEqual(application_response.status_code, 200)
+        self.assertEqual(application_response.data[0]["item_type"], "application")
+        self.assertEqual(application_response.data[0]["application"], application.id)
+
+        assignment = accept_application(application=application, accepted_by=self.host)
+        assignment_response = self.api_client.get("/api/marketplace/calendar/", params)
+        self.assertEqual(assignment_response.status_code, 200)
+        self.assertEqual(assignment_response.data[0]["item_type"], "assignment")
+        self.assertEqual(assignment_response.data[0]["assignment"], assignment.id)
+        self.assertTrue(assignment_response.data[0]["can_complete"])

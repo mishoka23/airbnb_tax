@@ -43,14 +43,17 @@ export default function AppEntryPage() {
       const response = await apiFetch("/api/accounts/me/");
       if (response.ok) {
         const data = (await response.json()) as CurrentUser;
+        if (data.is_platform_admin) {
+          window.location.replace("/admin");
+          return;
+        }
         // Redirect approved hosts straight to their dedicated dashboard
         if (data.role === "host") {
           window.location.replace("/host");
           return;
         }
-        // Redirect admins to the admin panel
-        if (data.role === "admin") {
-          window.location.replace("/admin");
+        if (data.role === "cleaner") {
+          window.location.replace("/cleaner");
           return;
         }
         setUser(data);
@@ -110,7 +113,7 @@ export default function AppEntryPage() {
             <strong>Host Cleaners</strong>
           </Link>
           <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-            {user.role === "admin" && (
+            {user.is_platform_admin && (
               <Link className="secondary-link logout-button" href="/admin">
                 <ShieldCheck size={16} aria-hidden />
                 Admin panel

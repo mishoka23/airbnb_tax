@@ -18,6 +18,7 @@ User = get_user_model()
 class UserSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, required=False, min_length=8)
     is_approved = serializers.BooleanField(read_only=True)
+    is_platform_admin = serializers.BooleanField(read_only=True)
 
     class Meta:
         model = User
@@ -32,6 +33,7 @@ class UserSerializer(serializers.ModelSerializer):
             "role",
             "account_status",
             "is_approved",
+            "is_platform_admin",
             "approved_at",
             "email_verified_at",
             "phone_verified_at",
@@ -40,6 +42,7 @@ class UserSerializer(serializers.ModelSerializer):
         read_only_fields = [
             "id",
             "is_approved",
+            "is_platform_admin",
             "approved_at",
             "email_verified_at",
             "phone_verified_at",

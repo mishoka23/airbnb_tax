@@ -30,11 +30,24 @@ class CleaningBatchSerializer(serializers.ModelSerializer):
 
 
 class AssignmentSerializer(serializers.ModelSerializer):
+    job_title = serializers.CharField(source="job.title", read_only=True)
+    job_scheduled_start = serializers.DateTimeField(source="job.scheduled_start", read_only=True)
+    job_scheduled_end = serializers.DateTimeField(source="job.scheduled_end", read_only=True)
+    job_status = serializers.CharField(source="job.status", read_only=True)
+    job_property_name = serializers.CharField(source="job.property.name", read_only=True)
+    job_property_city = serializers.CharField(source="job.property.city", read_only=True)
+
     class Meta:
         model = Assignment
         fields = [
             "id",
             "job",
+            "job_title",
+            "job_scheduled_start",
+            "job_scheduled_end",
+            "job_status",
+            "job_property_name",
+            "job_property_city",
             "cleaner",
             "assigned_member",
             "application",
@@ -52,6 +65,27 @@ class AssignMemberSerializer(serializers.Serializer):
     assigned_member_id = serializers.IntegerField()
 
 
+class MarketplaceCalendarItemSerializer(serializers.Serializer):
+    id = serializers.CharField()
+    item_type = serializers.ChoiceField(choices=["open_job", "application", "assignment"])
+    job = serializers.IntegerField()
+    application = serializers.IntegerField(required=False, allow_null=True)
+    assignment = serializers.IntegerField(required=False, allow_null=True)
+    title = serializers.CharField()
+    starts_at = serializers.DateTimeField()
+    ends_at = serializers.DateTimeField()
+    currency = serializers.CharField()
+    price = serializers.DecimalField(max_digits=8, decimal_places=2, required=False, allow_null=True)
+    property_name = serializers.CharField()
+    property_city = serializers.CharField(allow_blank=True)
+    host_name = serializers.CharField()
+    job_status = serializers.CharField()
+    application_status = serializers.CharField(required=False, allow_blank=True)
+    completed_at = serializers.DateTimeField(required=False, allow_null=True)
+    can_apply = serializers.BooleanField()
+    can_complete = serializers.BooleanField()
+
+
 class CleaningJobSerializer(serializers.ModelSerializer):
     property_id = serializers.PrimaryKeyRelatedField(
         source="property",
@@ -66,6 +100,10 @@ class CleaningJobSerializer(serializers.ModelSerializer):
         allow_null=True,
     )
     host = serializers.PrimaryKeyRelatedField(read_only=True)
+    host_name = serializers.SerializerMethodField()
+    property_name = serializers.CharField(source="property.name", read_only=True)
+    property_city = serializers.CharField(source="property.city", read_only=True)
+    property_address = serializers.CharField(source="property.address", read_only=True)
     assignment = AssignmentSerializer(read_only=True)
 
     class Meta:
@@ -74,7 +112,11 @@ class CleaningJobSerializer(serializers.ModelSerializer):
             "id",
             "property_id",
             "property",
+            "property_name",
+            "property_city",
+            "property_address",
             "host",
+            "host_name",
             "batch_id",
             "batch",
             "title",
@@ -102,6 +144,9 @@ class CleaningJobSerializer(serializers.ModelSerializer):
             "updated_at",
         ]
 
+    def get_host_name(self, obj):
+        return obj.host.get_full_name() or obj.host.get_username()
+
     def validate(self, attrs):
         scheduled_start = attrs.get("scheduled_start", getattr(self.instance, "scheduled_start", None))
         scheduled_end = attrs.get("scheduled_end", getattr(self.instance, "scheduled_end", None))
@@ -117,6 +162,12 @@ class CleanerApplicationSerializer(serializers.ModelSerializer):
         write_only=True,
     )
     cleaner = serializers.PrimaryKeyRelatedField(read_only=True)
+    job_title = serializers.CharField(source="job.title", read_only=True)
+    job_scheduled_start = serializers.DateTimeField(source="job.scheduled_start", read_only=True)
+    job_scheduled_end = serializers.DateTimeField(source="job.scheduled_end", read_only=True)
+    job_status = serializers.CharField(source="job.status", read_only=True)
+    job_property_name = serializers.CharField(source="job.property.name", read_only=True)
+    job_property_city = serializers.CharField(source="job.property.city", read_only=True)
 
     class Meta:
         model = CleanerApplication
@@ -124,6 +175,12 @@ class CleanerApplicationSerializer(serializers.ModelSerializer):
             "id",
             "job_id",
             "job",
+            "job_title",
+            "job_scheduled_start",
+            "job_scheduled_end",
+            "job_status",
+            "job_property_name",
+            "job_property_city",
             "cleaner",
             "status",
             "proposed_price",

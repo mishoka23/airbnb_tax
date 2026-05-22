@@ -24,6 +24,7 @@ interface AdminUser {
   role: UserRole;
   account_status: string;
   is_approved: boolean;
+  is_platform_admin: boolean;
   approved_at: string | null;
 }
 
@@ -55,7 +56,7 @@ export default function AdminPage() {
 
   // ── Load users once we know we're an admin ──────────────────────────────────
   useEffect(() => {
-    if (me?.role === "admin") void loadUsers();
+    if (me?.is_platform_admin) void loadUsers();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [me]);
 
@@ -150,7 +151,7 @@ export default function AdminPage() {
     );
   }
 
-  if (me.role !== "admin") {
+  if (!me.is_platform_admin) {
     return (
       <main className="admin-page">
         <section className="admin-gate">
@@ -292,7 +293,9 @@ export default function AdminPage() {
 
                     {/* Role + status chips */}
                     <div className="admin-user-meta">
-                      <span className="admin-role-chip">{roleLabel(user.role)}</span>
+                      <span className="admin-role-chip">
+                        {user.is_platform_admin ? "Admin" : roleLabel(user.role)}
+                      </span>
                       <span
                         className={`admin-status-chip admin-status-${user.account_status}`}
                       >

@@ -32,11 +32,25 @@ class AppUserAdmin(UserAdmin):
             },
         ),
     )
+    add_fieldsets = UserAdmin.add_fieldsets + (
+        (
+            "Marketplace",
+            {
+                "classes": ("wide",),
+                "fields": ("role", "account_status", "phone_number", "preferred_language"),
+            },
+        ),
+    )
     list_display = ("username", "email", "role", "account_status", "is_staff", "is_active")
     list_filter = UserAdmin.list_filter + ("role", "account_status")
     readonly_fields = ("approved_at", "approved_by")
 
     def save_model(self, request, obj, form, change):
+        if obj.role == User.Role.ADMIN or obj.is_superuser:
+            obj.role = User.Role.ADMIN
+            obj.account_status = User.AccountStatus.APPROVED
+            obj.is_staff = True
+            obj.is_superuser = True
         if obj.account_status == User.AccountStatus.APPROVED and obj.approved_at is None:
             obj.approved_at = timezone.now()
             obj.approved_by = request.user

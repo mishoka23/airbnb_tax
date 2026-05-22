@@ -46,6 +46,50 @@ class AccountAuthTests(TestCase):
         me_response = self.client.get(reverse("account-me"))
         self.assertEqual(me_response.status_code, 200)
         self.assertEqual(me_response.data["account_status"], User.AccountStatus.PENDING)
+        self.assertFalse(me_response.data["is_platform_admin"])
+
+    def test_signup_does_not_allow_admin_role(self):
+        response = self.client.post(
+            reverse("account-signup"),
+            {
+                "name": "Platform Admin",
+                "email": "admin-signup@example.com",
+                "role": User.Role.ADMIN,
+                "password": "password123",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(User.objects.filter(email="admin-signup@example.com").exists())
+
+    def test_anonymous_user_endpoint_cannot_create_admin_account(self):
+        response = self.client.post(
+            "/api/accounts/users/",
+            {
+                "username": "public-admin",
+                "email": "public-admin@example.com",
+                "password": "password123",
+                "role": User.Role.ADMIN,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(User.objects.filter(username="public-admin").exists())
+
+    def test_superuser_defaults_to_platform_admin(self):
+        user = User.objects.create_superuser(
+            username="root",
+            email="root@example.com",
+            password="password123",
+        )
+
+        self.assertEqual(user.role, User.Role.ADMIN)
+        self.assertEqual(user.account_status, User.AccountStatus.APPROVED)
+        self.assertTrue(user.is_staff)
+        self.assertTrue(user.is_superuser)
+        self.assertTrue(user.is_platform_admin)
 
     def test_login_and_logout_use_session_authentication(self):
         user = User.objects.create_user(

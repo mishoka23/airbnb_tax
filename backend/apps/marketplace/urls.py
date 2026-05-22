@@ -5,7 +5,9 @@ from apps.marketplace.views import (
     CleanerApplicationViewSet,
     CleaningBatchViewSet,
     CleaningJobViewSet,
+    MarketplaceCalendarView,
 )
+from django.urls import path
 
 
 router = DefaultRouter()
@@ -14,5 +16,6 @@ router.register("jobs", CleaningJobViewSet, basename="cleaning-job")
 router.register("applications", CleanerApplicationViewSet, basename="cleaner-application")
 router.register("assignments", AssignmentViewSet, basename="assignment")
 
-urlpatterns = router.urls
-
+urlpatterns = [
+    path("calendar/", MarketplaceCalendarView.as_view(), name="marketplace-calendar"),
+] + router.urls
