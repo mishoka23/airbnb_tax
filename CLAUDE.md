@@ -13,8 +13,8 @@ Read `AGENT.md` before making any changes. Read `BUSINESS.md` before product, ma
 
 ## Stack
 
-- Backend: Django + DRF, PostgreSQL, Redis, Celery
-- Frontend: Next.js (responsive web/PWA)
+- Backend: Django 6.0+ / DRF 3.17+, PostgreSQL 16+ (Docker), SQLite (local), Redis 7+, Celery 5.4+
+- Frontend: Next.js 15.5+ / React 19.2+ (responsive web/PWA), TypeScript 5.9+
 - Timezone: `Europe/Sofia` | Currency: EUR | Languages: BG/EN
 - Local infra: Docker Compose
 
@@ -56,12 +56,14 @@ npm.cmd run typecheck && npm.cmd run lint
 - Payments happen outside the platform — never add payment processing unless explicitly requested.
 - Public `/` is a marketing landing page; authenticated workspaces go behind auth routes.
 - Internal app calendar is the source of truth; external calendars (Google, iCal) sync into it.
+- Never call `fetch` directly — always use `apiFetch` from `frontend/lib/api.ts`.
+- Never set `Content-Type: application/json` for `FormData` uploads — browser sets multipart boundary.
 
 ## Repo Structure
 
 ```
 backend/
-  config/           Django project config + Celery
+  config/           Django project config (settings, celery, wsgi, asgi)
   apps/             accounts, properties, marketplace, calendars, feedback, notifications
 frontend/
   app/
@@ -69,12 +71,12 @@ frontend/
     login/          Session login
     signup/         Role-based signup
     app/            Generic workspace — auto-redirects hosts → /host, admins → /admin
-    admin/          Admin approval panel (list / approve / reject accounts)
-    host/           Host dashboard (properties, jobs, month calendar)
+    admin/          Admin approval panel (list / approve / reject, ?filter=pending URL param)
+    host/           Host dashboard (properties, jobs, month calendar, ICS import)
     components/     CookieConsentBanner
   lib/
-    api.ts          apiFetch wrapper — handles CSRF + Content-Type automatically
-  app/globals.css   CSS design tokens + all shared component classes
+    api.ts          apiFetch wrapper — CSRF + Content-Type, FormData-safe, CurrentUser type
+  app/globals.css   CSS design tokens + all shared component classes (incl. .host-ics-*)
   next.config.mjs   trailingSlash: true + dual rewrite rules (required for Django APPEND_SLASH)
 docker-compose.yml
 .env.example        → copy to .env before running
@@ -88,10 +90,21 @@ docker-compose.yml
 | `/login` | No | All | ✅ Live |
 | `/signup` | No | All | ✅ Live |
 | `/app` | Yes | All roles | ✅ Live — redirects hosts/admins automatically |
-| `/admin` | Yes | `admin` role only | ✅ Live |
-| `/host` | Yes | `host` role only | ✅ Live |
+| `/admin` | Yes | `admin` role only | ✅ Live — reads `?filter=pending` URL param |
+| `/host` | Yes | `host` role only | ✅ Live — ICS import + calendar + jobs |
 | `/cleaner` | Yes | `cleaner` role only | ⬜ Not built yet |
 | `/agency` | Yes | `agency` role only | ⬜ Not built yet |
+
+## Implemented Features (this session)
+
+- **Admin email on signup**: `send_admin_new_account_email` Celery task fires on every new account. Emails all admin/staff users with a direct link to `/admin?filter=pending`. Retries 3× on SMTP failure. Synchronous fallback (`_FakeTask`) when Celery not installed.
+- **SMTP email config**: `EMAIL_BACKEND`, `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_USE_TLS`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`, `DEFAULT_FROM_EMAIL` all configurable via `.env`. Console backend by default.
+- **`FRONTEND_URL` setting**: used to build clickable links in outbound emails.
+- **python-dotenv auto-load**: `manage.py`, `wsgi.py`, `asgi.py` all call `load_dotenv(path, override=False)` before Django setup.
+- **Admin panel URL filter**: reads `?filter=pending` via `useSearchParams()` — pre-selects the pending tab when following email approval links.
+- **ICS file import**: `POST /api/properties/parse-ics/` parses uploaded Airbnb `.ics` files, filters blocked-date placeholders, returns reservation list. Host dashboard two-step modal: upload → review → bulk-create Draft jobs.
+- **`apiFetch` FormData fix**: `Content-Type: application/json` only set for string bodies, not `FormData`.
+- **`is_platform_admin` in CurrentUser**: added to `frontend/lib/api.ts` interface.
 
 ## CSS Design System (globals.css)
 
@@ -134,6 +147,18 @@ All UI is written in plain CSS with these shared tokens and classes. **Do not ad
     .host-form
       .form-grid
       .host-form-actions
+```
+
+**ICS import modal pattern (two-step):**
+```
+.host-modal--wide      (wider variant for event checklist)
+  .host-modal-subtitle
+  .host-ics-drop-zone  (step 1 — file upload area)
+  .host-ics-events     (step 2 — scrollable event list)
+    .host-ics-event[.selected]
+      .host-ics-event-info
+      .host-ics-event-summary / .host-ics-event-dates / .host-ics-event-nights
+  .host-ics-done       (success state)
 ```
 
 ## Git / GitHub

@@ -2,7 +2,7 @@
 
 Marketplace for Bulgarian short-term rental hosts, verified cleaners, and cleaning agencies.
 
-The MVP focuses on job posting, monthly cleaning batches, cleaner applications, assignment, shared calendar coordination, notifications, and two-way feedback. Payments are intentionally out of scope for v1.
+The MVP focuses on job posting, monthly cleaning batches, Airbnb iCal imports, cleaner applications, assignment, shared calendar coordination, email notifications, and two-way feedback. Payments are intentionally out of scope for v1.
 
 ## Documentation
 
@@ -13,8 +13,8 @@ The MVP focuses on job posting, monthly cleaning batches, cleaner applications, 
 
 ## Stack
 
-- Backend: Django, Django REST Framework, PostgreSQL, Redis, Celery.
-- Frontend: Next.js responsive web/PWA.
+- Backend: Django 6.0+, Django REST Framework 3.17+, PostgreSQL 16+, Redis 7+, Celery 5.4+.
+- Frontend: Next.js 15.5+ / React 19.2+ responsive web/PWA, TypeScript 5.9+.
 - Local infrastructure: Docker Compose with PostgreSQL, Redis, backend, worker, and frontend services.
 
 ## Quick Start
@@ -37,19 +37,23 @@ Default URLs:
 - Backend health check: `http://localhost:8000/api/health/`
 - Django admin: `http://localhost:8000/admin/`
 
+> **Local dev without Docker**: comment out `DATABASE_URL` in `.env` — Django falls back to SQLite automatically. Celery is optional; tasks run synchronously without it.
+
 ## Current Implementation Status
 
-### Backend (complete for v1 domain logic)
+### Backend
 
 - Django project and domain apps (`accounts`, `properties`, `marketplace`, `calendars`, `feedback`, `notifications`).
 - Session-cookie signup, login, logout, and current-user APIs with CSRF enforcement.
 - Account approval states (pending / approved / rejected / suspended) and admin approve/reject/suspend actions.
+- **Admin email notification on signup** — Celery task emails all admin/staff accounts with a direct approval link. Retries 3× on SMTP failure. Synchronous fallback when Celery is not installed.
 - Agency profiles, invitations, memberships, and delegated cleaner assignments.
 - Cookie consent records for optional analytics and marketing cookies.
 - Property management: CRUD, external calendar connections, reservations.
+- **Airbnb ICS parsing** — `POST /api/properties/parse-ics/` accepts a multipart-uploaded `.ics` file, filters blocked-date placeholders, returns parsed reservation list.
 - Marketplace service functions: publish jobs, submit applications, accept applications, complete jobs, two-way reviews.
-- Notification records and placeholder Celery tasks.
-- Calendar conflict API and placeholder sync tasks.
+- Notification records; email via configurable Django mail backend (console by default, SMTP in production).
+- Calendar conflict API; Google Calendar sync and iCal export are planned.
 
 ### Frontend (Next.js App Router)
 
@@ -59,13 +63,30 @@ Default URLs:
 | `/login` | ✅ Done | Session login |
 | `/signup` | ✅ Done | Role-based signup (host / cleaner / agency) |
 | `/app` | ✅ Done | Generic workspace — auto-redirects hosts → `/host`, admins → `/admin` |
-| `/admin` | ✅ Done | Admin approval dashboard — list / filter / approve / reject accounts |
-| `/host` | ✅ Done | Host dashboard — property CRUD, job posting, month calendar view, publish jobs |
+| `/admin` | ✅ Done | Admin approval dashboard — list / filter / approve / reject; reads `?filter=pending` URL param |
+| `/host` | ✅ Done | Host dashboard — property CRUD, job posting, month calendar, publish jobs, **ICS import** |
 | `/cleaner` | ⬜ Not built | Cleaner dashboard — profile, browse open jobs, apply |
 | `/agency` | ⬜ Not built | Agency dashboard — manage members, view assigned jobs |
 
 ### Shared infrastructure
 
-- `frontend/lib/api.ts` — `apiFetch` wrapper with automatic CSRF token injection and `Content-Type`.
+- `frontend/lib/api.ts` — `apiFetch` wrapper with automatic CSRF token injection; `Content-Type` only set for JSON string bodies (not FormData). `CurrentUser` type includes `is_platform_admin`.
 - `frontend/next.config.mjs` — `trailingSlash: true` + dual rewrite rules for Django `APPEND_SLASH` compatibility.
-- `frontend/app/globals.css` — CSS design tokens and shared component classes (see DEV.md for details).
+- `frontend/app/globals.css` — CSS design tokens and shared component classes (see `DEV.md` for full reference).
+
+## Email Configuration
+
+Emails are printed to the Django console by default. To send real emails, add to `.env`:
+
+```dotenv
+EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend
+EMAIL_HOST=smtp.gmail.com
+EMAIL_PORT=587
+EMAIL_USE_TLS=true
+EMAIL_HOST_USER=your@gmail.com
+EMAIL_HOST_PASSWORD=your-app-password
+DEFAULT_FROM_EMAIL=your@gmail.com
+FRONTEND_URL=http://localhost:3000
+```
+
+See `DEV.md` for full environment variable reference.

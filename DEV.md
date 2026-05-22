@@ -18,6 +18,7 @@ The first production version should include:
 - Host property management.
 - Single cleaning job posting.
 - Monthly cleaning batch creation from reservations or manual dates.
+- Bulk cleaning job creation by importing an Airbnb `.ics` calendar file.
 - Cleaner verification before marketplace access.
 - Cleaner applications to individual jobs or monthly batches.
 - Assignment workflow after host approval.
@@ -39,11 +40,11 @@ Out of scope for v1 unless explicitly requested:
 
 Use this baseline stack unless the architecture document is intentionally updated:
 
-- Backend: Python, Django, Django REST Framework.
-- Frontend: React with Next.js as a responsive web/PWA.
-- Database: PostgreSQL.
-- Cache and broker: Redis.
-- Background jobs: Celery.
+- Backend: Python 3.13+, Django 6.0+, Django REST Framework 3.17+.
+- Frontend: React 19.2+ with Next.js 15.5+ as a responsive web/PWA.
+- Database: PostgreSQL 16+ (Docker/production); SQLite (local dev without Docker).
+- Cache and broker: Redis 7+.
+- Background jobs: Celery 5.4+.
 - Object storage: EU-hosted S3-compatible storage for future uploaded assets.
 - Hosting: EU managed cloud infrastructure.
 - Timezone: `Europe/Sofia`.
@@ -52,26 +53,25 @@ Use this baseline stack unless the architecture document is intentionally update
 
 ## Repository State
 
-This repository contains the first application scaffold:
-
-- `backend/`: Django project, Django REST Framework APIs, domain apps, service-layer workflows, initial migrations, and tests.
-- `frontend/`: Next.js responsive web/PWA with a public landing page. Authenticated dashboards are not built yet.
-- `docker-compose.yml`: PostgreSQL, Redis, backend, Celery worker, and frontend local stack.
-- `.env.example`: local environment defaults.
-
-## Local Development Conventions
-
-Current layout:
-
 ```text
 backend/
-  config/
-  apps/
+  config/           Django project config (settings, celery, wsgi, asgi)
+  apps/             accounts, properties, marketplace, calendars, feedback, notifications
 frontend/
   app/
+    page.tsx        Public landing page (auth-aware header)
+    login/          Session login
+    signup/         Role-based signup
+    app/            Generic workspace (auto-redirects hosts → /host, admins → /admin)
+    admin/          Admin approval panel (list / approve / reject, URL filter param)
+    host/           Host dashboard (properties, jobs, calendar, ICS import)
+    components/     CookieConsentBanner
   lib/
+    api.ts          apiFetch wrapper — CSRF + Content-Type, FormData-safe
+  app/globals.css   CSS design tokens + all shared component classes
+  next.config.mjs   trailingSlash: true + dual rewrite rules (required for APPEND_SLASH)
 docker-compose.yml
-.env.example
+.env.example        → copy to .env before running
 ```
 
 Keep the backend modular even before services are split. Each backend domain should own its models, serializers, services, permissions, tests, and migrations.
@@ -80,15 +80,62 @@ Prefer explicit service-layer functions for business workflows such as accepting
 
 ## Environment Setup
 
-Copy the example environment file before using Docker Compose:
+### Copying the example file
 
 ```powershell
 Copy-Item .env.example .env
 ```
 
-The Docker environment uses PostgreSQL and Redis. When running the backend directly without `DATABASE_URL`, Django falls back to local SQLite for lightweight development checks.
+### Environment variables
 
-The root `requirements.txt` is a project-level overview. It includes `backend/requirements.txt` for Python installation and documents the non-Python technology requirements in comments.
+`python-dotenv` loads `.env` automatically at startup from `manage.py`, `wsgi.py`, and `asgi.py` using `override=False` — shell environment variables take precedence.
+
+Key variables and their defaults:
+
+| Variable | Local default | Notes |
+|---|---|---|
+| `DJANGO_SECRET_KEY` | `dev-only-change-me` | **Change in production** |
+| `DJANGO_DEBUG` | `true` | |
+| `DATABASE_URL` | *(absent → SQLite)* | **Comment out for local dev without Docker** |
+| `CELERY_BROKER_URL` | `redis://localhost:6379/0` | |
+| `CELERY_RESULT_BACKEND` | `redis://localhost:6379/1` | |
+| `EMAIL_BACKEND` | `django.core.mail.backends.console.EmailBackend` | Switch to `smtp.EmailBackend` in production |
+| `EMAIL_HOST` | *(empty)* | SMTP server hostname, e.g. `smtp.gmail.com` |
+| `EMAIL_PORT` | `587` | STARTTLS port |
+| `EMAIL_USE_TLS` | `true` | |
+| `EMAIL_HOST_USER` | *(empty)* | SMTP username / Gmail address |
+| `EMAIL_HOST_PASSWORD` | *(empty)* | SMTP password or Gmail App Password |
+| `DEFAULT_FROM_EMAIL` | `noreply@example.local` | Sender address for outbound emails |
+| `FRONTEND_URL` | `http://localhost:3000` | Base URL used to build links in outbound emails |
+| `FRONTEND_TRUSTED_ORIGINS` | `http://localhost:3000,...` | CSRF trusted origins |
+| `NEXT_PUBLIC_API_URL` | `http://localhost:8000/api` | API base URL for the frontend |
+
+### Local vs Docker DATABASE_URL
+
+The local `.env` should have `DATABASE_URL` **commented out** so Django falls back to SQLite:
+
+```dotenv
+# DATABASE_URL=postgres://airbnb_cleaners:airbnb_cleaners@db:5432/airbnb_cleaners
+```
+
+Docker Compose passes `DATABASE_URL` via `env_file:` pointing to `.env`, where the Docker hostname `db` is valid inside the container network.
+
+### Email in local development
+
+By default Django prints emails to the console (`console.EmailBackend`). To receive real emails during local dev, add to `.env`:
+
+```dotenv
+EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend
+EMAIL_HOST=smtp.gmail.com
+EMAIL_PORT=587
+EMAIL_USE_TLS=true
+EMAIL_HOST_USER=your@gmail.com
+EMAIL_HOST_PASSWORD=your-gmail-app-password
+DEFAULT_FROM_EMAIL=your@gmail.com
+FRONTEND_URL=http://localhost:3000
+```
+
+Use a Gmail **App Password** (not your account password). Generate one at Google Account → Security → App passwords. Restart the backend after changing `.env`.
 
 ## Docker Development
 
@@ -138,6 +185,8 @@ Run a Celery worker after Redis is available and dependencies are installed:
 celery -A config worker --loglevel=info
 ```
 
+**Celery is optional for local dev.** When `celery` is not installed, tasks fall back to a `_FakeTask` stub in `apps/notifications/tasks.py` that runs synchronously. All `.delay()` and `.apply()` calls work without a broker.
+
 ## Frontend Local Commands
 
 From `frontend/`:
@@ -152,38 +201,39 @@ Run frontend checks:
 ```powershell
 npm.cmd run typecheck
 npm.cmd run lint
-npm.cmd run build
 ```
 
 PowerShell may block `npm.ps1` with an execution policy error. Use `npm.cmd` commands on Windows to avoid changing execution policy.
 
-Do not run `npm.cmd run build` while `npm.cmd run dev` is running. Both write to `frontend/.next`, and running them together can produce missing generated files such as `.next/server/app/page.js`. If the frontend shows a stale Next.js runtime error, stop the dev server, remove `.next`, and restart:
+Do not run `npm.cmd run build` while `npm.cmd run dev` is running. Both write to `frontend/.next`, and running them together can produce missing generated files. If the frontend shows a stale Next.js runtime error, stop the dev server, remove `.next`, and restart:
 
 ```powershell
-cd C:\Users\35987\Desktop\airbnb_tax\frontend
-Remove-Item -Recurse -Force .next
-npm.cmd run dev -- --hostname 127.0.0.1
+Remove-Item -Recurse -Force frontend/.next
+cd frontend && npm.cmd run dev -- --hostname 127.0.0.1
 ```
 
 ## Current Frontend Behavior
 
 ### Routing overview
 
-| Route | Purpose |
-|---|---|
-| `/` | Public landing page — auth-aware header |
-| `/login` | Session login |
-| `/signup` | Role-based signup |
-| `/app` | Generic workspace — auto-redirects hosts and admins |
-| `/admin` | Admin account approval panel |
-| `/host` | Host property and job management with calendar |
-| `/cleaner` | **Not built** — cleaner dashboard |
-| `/agency` | **Not built** — agency dashboard |
+| Route | Auth required | Who | Status |
+|---|---|---|---|
+| `/` | No | All | ✅ Live |
+| `/login` | No | All | ✅ Live |
+| `/signup` | No | All | ✅ Live |
+| `/app` | Yes | All roles | ✅ Live — redirects hosts/admins automatically |
+| `/admin` | Yes | `admin` role | ✅ Live |
+| `/host` | Yes | `host` role | ✅ Live |
+| `/cleaner` | Yes | `cleaner` role | ⬜ Not built yet |
+| `/agency` | Yes | `agency` role | ⬜ Not built yet |
 
 ### Key frontend files
 
 **`frontend/lib/api.ts`** — all HTTP calls go through `apiFetch`. Handles CSRF automatically.
-Do not call `fetch` directly in any page — always use `apiFetch`.
+
+- Sets `Content-Type: application/json` only when `body` is a string — does **not** set it for `FormData` (the browser sets the correct multipart boundary automatically).
+- Reads the Django `csrftoken` cookie and injects `X-CSRFToken` on state-changing requests.
+- Never call `fetch` directly in any page.
 
 **`frontend/next.config.mjs`** — has `trailingSlash: true` and two rewrite rules for `/api/:path*`. Do not simplify to one rewrite rule — Django's `APPEND_SLASH` requires both forms.
 
@@ -200,6 +250,7 @@ Do not call `fetch` directly in any page — always use `apiFetch`.
 
 - Lists all user accounts with client-side filtering by status (pending / approved / all).
 - Approve or reject pending accounts with instant local state update.
+- Reads `?filter=pending` URL query param on load — used in admin notification email links to pre-select the pending tab.
 - Accessible to `admin` role only — redirects others.
 
 ### Host dashboard (`/host`)
@@ -211,6 +262,10 @@ Do not call `fetch` directly in any page — always use `apiFetch`.
   - Click a day with jobs → filters the list panel to that day.
   - Post a job via modal form (`POST /api/marketplace/jobs/`) — saved as Draft.
   - Publish button: `POST /api/marketplace/jobs/{id}/publish/` → transitions to Open.
+  - **Import ICS** button: two-step modal for Airbnb `.ics` file import:
+    1. Upload file + select property + set default cleaning start time.
+    2. Review parsed reservations (checkin, checkout, nights) — select which ones to import.
+    3. Confirm: creates one Draft cleaning job per selected checkout date via `POST /api/marketplace/jobs/`.
 - Pending hosts see a gold warning banner but can still view the UI.
 
 ### CSS conventions
@@ -236,6 +291,7 @@ Naming conventions:
 - Admin panel: `.admin-*`
 - Host dashboard: `.host-*`
 - Modals: `.host-modal-backdrop` → `.host-modal` → `.host-modal-header` + `.host-form`
+- ICS import modal: `.host-ics-*`
 
 When building a new role dashboard (cleaner, agency), follow the host pattern:
 1. Create `frontend/app/{role}/page.tsx` with auth gate, role check, and data fetch.
@@ -252,8 +308,10 @@ Implemented service-level behavior:
 - Signup, login, logout, and current-user APIs using Django sessions.
 - Pending, approved, rejected, and suspended account status.
 - Admin approval, rejection, and suspension actions.
+- **Admin email notification on new account signup** — `send_admin_new_account_email` Celery task sends email to all `role=admin` or `is_staff=True` users with a direct link to the pending-tab admin panel. Retries up to 3 times on SMTP failure.
 - Agency profile, invitation, membership, and member assignment APIs.
 - Cookie consent records for essential, analytics, and marketing choices.
+- **ICS file parsing** — `POST /api/properties/parse-ics/` accepts a multipart-uploaded Airbnb `.ics` file, parses VEVENT entries, filters blocked-date placeholders, returns `[{uid, summary, checkin, checkout, nights}]`.
 - Publish draft cleaning jobs.
 - Allow approved, verified cleaners and approved agencies to apply to open jobs.
 - Allow hosts/admins to accept one application.
@@ -263,22 +321,28 @@ Implemented service-level behavior:
 - Allow two-way reviews only after completion.
 - Update cleaner rating summaries after reviews.
 
-Provider integrations are not complete yet:
+Placeholder integrations (not complete):
 
 - Google Calendar sync is a placeholder.
-- iCal parsing is a placeholder.
-- Email/SMS dispatch is a placeholder.
+- SMS dispatch is a placeholder.
 - Object storage is planned for future file/photo/document uploads.
+- iCal export (for host/cleaner calendars) is planned.
+
+## Email Configuration
+
+Email dispatch uses Django's configurable mail backend. In local dev, emails are printed to the Django console by default. To send real emails, set `EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend` and add SMTP credentials in `.env`.
+
+The `send_admin_new_account_email` task reads `settings.FRONTEND_URL` to build the approval link included in the notification email.
+
+When `celery` is not installed locally, the task runs synchronously via the `_FakeTask` fallback stub in `apps/notifications/tasks.py`.
 
 ## Git Setup Note
 
-This workspace has reported a Git safe-directory ownership warning. If Git commands fail locally with `detected dubious ownership`, the developer or agent may need to run:
+If Git commands fail with `detected dubious ownership`, run:
 
 ```powershell
-git config --global --add safe.directory C:/Users/35987/Desktop/airbnb_tax
+git config --global --add safe.directory "C:/Users/d.yordanov/OneDrive - Intelligent Systems Bulgaria Ltd/Personal/Personal Projects/AirBnbMarketplace/airbnb_tax"
 ```
-
-Only run that command after confirming it is appropriate for the current machine and user account.
 
 ## Testing Expectations
 
@@ -288,12 +352,16 @@ When code exists, test coverage should focus on:
 - Cleaner verification and permissions.
 - Application and assignment rules.
 - Calendar conflict detection.
+- iCal parsing (blocked-date filtering, date normalization, sorting).
 - Google Calendar and iCal sync behavior.
-- Notification triggers.
+- Notification triggers, especially `send_admin_new_account_email`.
 - Review eligibility and two-way review constraints.
 - Admin moderation actions.
+- Email task retry behavior on SMTP failure.
 
 Every change to business logic, data models, API permissions, migrations, or background tasks should include tests or a clear explanation for why tests were not added.
+
+Use `django.core.mail.backends.locmem.EmailBackend` with `@override_settings` in email tests. Call Celery tasks via `.apply(args=[...])` for synchronous test execution without a broker.
 
 ## Documentation Expectations
 

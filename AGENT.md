@@ -18,7 +18,9 @@ The product direction for v1 is:
 - Agency accounts that invite separate cleaner users into agency groups.
 - Consent-first cookie handling for optional analytics and marketing cookies.
 - Single cleaning and monthly batch posting.
+- Bulk cleaning job creation from Airbnb iCal calendar imports.
 - Google Calendar sync and iCal import/export.
+- Email notifications via Django's mail backend (SMTP in production).
 - Two-way reviews.
 - No in-app payments in v1.
 
@@ -72,16 +74,18 @@ When code exists:
 - Avoid cross-domain imports that bypass service boundaries.
 - Prefer typed, explicit interfaces for shared workflow inputs.
 - Make background jobs idempotent where possible.
-- Handle external calendar and notification failures explicitly.
-- Keep secrets out of source control.
+- Handle external calendar and notification failures explicitly — retry with backoff, never silently swallow.
+- Keep secrets out of source control — use `.env` (never committed) and `.env.example` (committed, no real values).
 - Do not run `npm run build` while `npm run dev` is running against the same `frontend/.next` directory; stop dev or clear `.next` first to avoid stale Next.js runtime errors.
+- Never call `fetch` directly in the frontend — always use `apiFetch` from `frontend/lib/api.ts`.
+- Never set `Content-Type: application/json` for `FormData` bodies — let the browser set the multipart boundary.
 
 ## Marketplace Rules To Preserve
 
 - Cleaners must be verified before applying for marketplace jobs.
 - Users must be approved before full marketplace rights are enabled.
 - Agencies must assign accepted agency jobs only to active member cleaners.
-- Hosts can post one cleaning or a monthly batch.
+- Hosts can post one cleaning or a monthly batch, or bulk-import from an Airbnb `.ics` file.
 - Cleaners apply; hosts accept or reject.
 - Price can be proposed or agreed in the app, but payment is handled outside the platform in v1.
 - A cleaning job can have only one accepted cleaner assignment.
@@ -90,59 +94,111 @@ When code exists:
 
 ## Current Implementation State
 
-### Backend — complete for v1 domain logic
+### Backend — what is implemented
 
-- Modular Django/DRF monolith under `backend/`.
-- All domain apps wired: `accounts`, `properties`, `marketplace`, `calendars`, `feedback`, `notifications`.
-- Session-cookie auth with CSRF enforcement (`ensure_csrf_cookie` on all auth views, `X-CSRFToken` required on state-changing requests).
-- Account approval states and admin approve/reject/suspend actions fully working.
-- Agency profiles, invitations, memberships, and member assignment fully working.
-- Property CRUD, cleaning job CRUD, batch CRUD, application workflow, assignment, completion, two-way reviews all implemented in service layer.
-- Notification records exist; email/SMS/provider dispatch is a placeholder.
-- Calendar conflict API exists; Google Calendar sync and iCal parsing are placeholders.
+**Auth and accounts (`apps/accounts`)**
+
+- Session-cookie auth with CSRF enforcement on all auth views.
+- Account approval states: pending, approved, rejected, suspended.
+- Admin approve / reject / suspend actions.
+- Host, cleaner, agency, and admin role profiles.
+- Agency invitations and memberships.
+- Cookie consent records.
+- Admin email notification on new account signup — `send_admin_new_account_email` Celery task:
+  - Sends to all `role=admin` or `is_staff=True` users (excluding blank emails and inactive accounts).
+  - Email includes name, email, phone, role, and a direct link to the admin panel with `?filter=pending`.
+  - Retries up to 3 times with 60-second delays on SMTP failure.
+  - Falls back to synchronous execution when Celery is not installed (via `_FakeTask` stub in `apps/notifications/tasks.py`).
+
+**Properties (`apps/properties`)**
+
+- Property CRUD with address, timezone, default cleaning duration, and default price.
+- External calendar connections and reservation records.
+- **ICS file parsing** — `POST /api/properties/parse-ics/`:
+  - Accepts multipart upload with `ics_file` field.
+  - Parses VEVENT entries using the `icalendar` library.
+  - Filters Airbnb blocked-date placeholders (entries whose summary contains "not available", "blocked", or "unavailable").
+  - Normalises `DTSTART`/`DTEND` from `datetime.datetime` or `datetime.date` to plain `date`.
+  - Returns `[{uid, summary, checkin, checkout, nights}]` sorted by checkin date.
+
+**Marketplace (`apps/marketplace`)**
+
+- Cleaning job CRUD (draft → open → assigned → completed lifecycle).
+- Monthly batch CRUD.
+- Cleaner applications.
+- Application acceptance (creates assignment, rejects competing applications).
+- Agency member delegation for accepted agency jobs.
+- Job completion.
+
+**Notifications (`apps/notifications`)**
+
+- In-app notification records.
+- Email dispatch via Django's configurable mail backend (`EMAIL_BACKEND` in settings).
+- `send_admin_new_account_email` task: ✅ implemented and tested.
+- Other notification triggers: placeholder — not yet wired.
+
+**Feedback (`apps/feedback`)**
+
+- Two-way reviews after completion.
+- Cleaner rating summary updates.
+
+**Calendars (`apps/calendars`)**
+
+- Calendar conflict API.
+- Google Calendar sync: placeholder.
+- iCal feed polling: placeholder.
+- iCal export for hosts/cleaners: planned.
+
+**Configuration (`config/`)**
+
+- `settings.py`: loads env via python-dotenv; DATABASE_URL absent → SQLite, present → PostgreSQL; full email backend config block; `FRONTEND_URL` for outbound email links.
+- `manage.py`, `wsgi.py`, `asgi.py`: all call `load_dotenv(path, override=False)` before Django setup so `.env` is available from the first import.
+- `celery.py`: Celery app wiring.
 
 ### Frontend — what exists
 
 **`frontend/lib/api.ts`** — all API calls must go through `apiFetch`. It:
-- Adds `Content-Type: application/json` when a body is present.
+
+- Sets `Content-Type: application/json` only when `body` is a `string` — not for `FormData`.
 - Reads `csrftoken` cookie and adds `X-CSRFToken` header on POST/PUT/PATCH/DELETE.
 - Returns raw `Response` — callers check `.ok` and call `.json()`.
+- `CurrentUser` interface includes: `id`, `email`, `role`, `account_status`, `full_name`, `is_platform_admin`.
 
 **`frontend/next.config.mjs`** — critical config:
+
 - `trailingSlash: true` — required so Next.js does not strip slashes before Django sees them.
 - Two rewrite rules matching `/api/:path*/` and `/api/:path*` — required to preserve trailing slashes through to Django's `APPEND_SLASH`.
 
 **`frontend/app/page.tsx`** — public landing page:
-- Auth-aware header: shows role-correct dashboard link (`/admin` for admins, `/host` for hosts, `/app` for others) when logged in; shows "Log in" when not.
-- Search form uses local state only — not connected to real backend yet.
+
+- Auth-aware header: shows role-correct dashboard link when logged in.
 
 **`frontend/app/login/page.tsx`** — session login, redirects to `/` after success.
 
 **`frontend/app/signup/page.tsx`** — role-based signup (host / cleaner / agency), redirects to `/app` after success.
 
 **`frontend/app/app/page.tsx`** — generic workspace:
+
 - Auto-redirects: hosts → `/host`, admins → `/admin`.
-- For cleaners/agencies: shows account status (pending / approved / rejected / suspended).
+- For cleaners/agencies: shows account status.
 
 **`frontend/app/admin/page.tsx`** — admin approval panel:
+
 - Gate: redirects to `/login` if unauthenticated, shows "Admin only" if not admin role.
-- Fetches `GET /api/accounts/users/` (all accounts, filtered client-side).
-- Three filters: pending / approved / all.
-- Approve: `POST /api/accounts/users/{id}/approve/` — updates local state immediately.
-- Reject: `POST /api/accounts/users/{id}/reject/` — updates local state immediately.
+- Fetches all accounts, client-side filters by status.
+- Reads `?filter=pending` URL param via `useSearchParams()` to pre-select tab — used in admin notification email approval links.
+- Approve: `POST /api/accounts/users/{id}/approve/`.
+- Reject: `POST /api/accounts/users/{id}/reject/`.
 
 **`frontend/app/host/page.tsx`** — host dashboard:
-- Gate: redirects to `/login` if unauthenticated, shows "Hosts only" if not host role.
-- Pending hosts see a gold banner but can still view the UI.
-- **Properties section**: lists properties as cards with job counts and default settings. "Add property" opens a modal that POSTs to `POST /api/properties/properties/`.
-- **Jobs & Calendar section**:
-  - Month calendar (custom 7-column CSS grid, Mon–Sun), prev/next navigation.
-  - Coloured dots per day: grey (draft), teal (open), gold (assigned), green (done), red (cancelled), orange (disputed).
-  - Clicking an empty day pre-fills the job form with that date.
-  - Clicking a day with jobs filters the list panel to that day.
-  - Job list panel shows: title, property, time range, status badge, price, Publish button for drafts.
-  - "Post a job" modal POSTs to `POST /api/marketplace/jobs/` — saved as Draft.
-  - Publish button calls `POST /api/marketplace/jobs/{id}/publish/` — transitions Draft → Open.
+
+- Properties section: add property via modal.
+- Jobs & Calendar section: month calendar grid, post job, publish job.
+- **ICS import** — two-step modal:
+  - Step 1: upload `.ics` file, select property, set default cleaning start time.
+  - Step 2: review parsed events (checkin, checkout, nights), select/deselect, confirm.
+  - Calls `POST /api/properties/parse-ics/` with `FormData` (multipart).
+  - Creates one Draft job per selected event checkout date via `POST /api/marketplace/jobs/`.
 
 ### What is NOT built yet (next priorities)
 
@@ -151,16 +207,18 @@ When code exists:
 3. **`/agency` dashboard** — agency manages members, views assigned jobs.
 4. **Cleaner verification** — admin marks cleaner as verified before they can apply.
 5. **Real search on landing page** — connect to `GET /api/accounts/cleaners/` with location filter.
-6. **Calendar integrations** — iCal import, Google Calendar sync (backend placeholders exist).
+6. **Google Calendar sync** — OAuth flow and feed polling (backend placeholders exist).
+7. **iCal export** — generate `.ics` for host and cleaner calendars.
+8. **Additional notification triggers** — application submitted, application accepted/rejected, assignment created, upcoming reminder, review prompt.
 
 ## Before Making Changes
 
 Check the current repository state and read the relevant docs first. For product, marketplace, launch, monetization, or success-metric changes, read `BUSINESS.md` before proposing or editing technical implementation.
 
-If Git reports a safe-directory ownership warning, do not work around it destructively. The developer may need:
+If Git reports a safe-directory ownership warning:
 
 ```powershell
-git config --global --add safe.directory C:/Users/35987/Desktop/airbnb_tax
+git config --global --add safe.directory "C:/Users/d.yordanov/OneDrive - Intelligent Systems Bulgaria Ltd/Personal/Personal Projects/AirBnbMarketplace/airbnb_tax"
 ```
 
 Only run commands that match the current project state. This repository may contain documentation before it contains application scaffolding.
