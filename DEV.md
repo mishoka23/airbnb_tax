@@ -167,17 +167,81 @@ npm.cmd run dev -- --hostname 127.0.0.1
 
 ## Current Frontend Behavior
 
-The root page at `http://127.0.0.1:3000` is a public landing page for the marketplace, not a logged-in dashboard.
+### Routing overview
 
-Current landing page behavior:
+| Route | Purpose |
+|---|---|
+| `/` | Public landing page — auth-aware header |
+| `/login` | Session login |
+| `/signup` | Role-based signup |
+| `/app` | Generic workspace — auto-redirects hosts and admins |
+| `/admin` | Admin account approval panel |
+| `/host` | Host property and job management with calendar |
+| `/cleaner` | **Not built** — cleaner dashboard |
+| `/agency` | **Not built** — agency dashboard |
+
+### Key frontend files
+
+**`frontend/lib/api.ts`** — all HTTP calls go through `apiFetch`. Handles CSRF automatically.
+Do not call `fetch` directly in any page — always use `apiFetch`.
+
+**`frontend/next.config.mjs`** — has `trailingSlash: true` and two rewrite rules for `/api/:path*`. Do not simplify to one rewrite rule — Django's `APPEND_SLASH` requires both forms.
+
+**`frontend/app/globals.css`** — single CSS file for the entire app. All new pages should add their styles here following existing naming conventions (`.host-*`, `.admin-*`, etc.).
+
+### Landing page (`/`)
 
 - Audience toggle for hosts and cleaners.
 - Search-style lead form with city, month, and property/capacity inputs.
-- Local confirmation message after submitting the form.
-- Launch-market, trust, cleaner-profile, and early-access sections.
-- Login and signup navigation to the first authenticated routes.
+- Local demo results only — not yet connected to backend cleaner search.
+- Auth-aware header: when logged in, shows the correct dashboard link for the current role.
 
-The landing page does not yet save lead/search data to the Django backend.
+### Admin panel (`/admin`)
+
+- Lists all user accounts with client-side filtering by status (pending / approved / all).
+- Approve or reject pending accounts with instant local state update.
+- Accessible to `admin` role only — redirects others.
+
+### Host dashboard (`/host`)
+
+- Two sections toggled in the topbar: **Properties** and **Jobs & Calendar**.
+- Properties section: add property via modal form (`POST /api/properties/properties/`).
+- Jobs section: month calendar grid with coloured status dots per day.
+  - Click an empty day → job form pre-filled with that date.
+  - Click a day with jobs → filters the list panel to that day.
+  - Post a job via modal form (`POST /api/marketplace/jobs/`) — saved as Draft.
+  - Publish button: `POST /api/marketplace/jobs/{id}/publish/` → transitions to Open.
+- Pending hosts see a gold warning banner but can still view the UI.
+
+### CSS conventions
+
+All pages use plain CSS in `frontend/app/globals.css`. No external CSS libraries.
+
+CSS variable reference:
+```
+--brand: #ff385c    primary CTA colour
+--teal: #008489     trust, cleaner, success
+--gold: #b7791f     warnings, ratings, assigned
+--ink: #111111      strong headings
+--muted: #6a6a6a    secondary text
+--line: #dddddd     borders
+--surface: #ffffff  card backgrounds
+--radius: 8px
+```
+
+Naming conventions:
+- Public landing: no prefix, or `.hero-*`, `.section`, `.trust-*`, `.join-*`
+- Auth pages: `.auth-*`
+- Generic workspace: `.app-*`
+- Admin panel: `.admin-*`
+- Host dashboard: `.host-*`
+- Modals: `.host-modal-backdrop` → `.host-modal` → `.host-modal-header` + `.host-form`
+
+When building a new role dashboard (cleaner, agency), follow the host pattern:
+1. Create `frontend/app/{role}/page.tsx` with auth gate, role check, and data fetch.
+2. Add `.{role}-*` CSS classes to the bottom of `globals.css` following the same structure as `.host-*`.
+3. Update the redirect in `frontend/app/app/page.tsx` to redirect that role.
+4. Update the header link in `frontend/app/page.tsx` for that role.
 
 ## Current Backend Behavior
 

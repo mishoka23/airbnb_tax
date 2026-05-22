@@ -61,12 +61,79 @@ npm.cmd run typecheck && npm.cmd run lint
 
 ```
 backend/
-  config/       Django project config + Celery
-  apps/         accounts, properties, marketplace, calendars, feedback, notifications
+  config/           Django project config + Celery
+  apps/             accounts, properties, marketplace, calendars, feedback, notifications
 frontend/
-  app/          Next.js app router (page.tsx = public landing)
+  app/
+    page.tsx        Public landing page (auth-aware header)
+    login/          Session login
+    signup/         Role-based signup
+    app/            Generic workspace — auto-redirects hosts → /host, admins → /admin
+    admin/          Admin approval panel (list / approve / reject accounts)
+    host/           Host dashboard (properties, jobs, month calendar)
+    components/     CookieConsentBanner
+  lib/
+    api.ts          apiFetch wrapper — handles CSRF + Content-Type automatically
+  app/globals.css   CSS design tokens + all shared component classes
+  next.config.mjs   trailingSlash: true + dual rewrite rules (required for Django APPEND_SLASH)
 docker-compose.yml
-.env.example    → copy to .env before running
+.env.example        → copy to .env before running
+```
+
+## Frontend Routes — Current State
+
+| Route | Auth required | Who can access | Status |
+|---|---|---|---|
+| `/` | No | All | ✅ Live |
+| `/login` | No | All | ✅ Live |
+| `/signup` | No | All | ✅ Live |
+| `/app` | Yes | All roles | ✅ Live — redirects hosts/admins automatically |
+| `/admin` | Yes | `admin` role only | ✅ Live |
+| `/host` | Yes | `host` role only | ✅ Live |
+| `/cleaner` | Yes | `cleaner` role only | ⬜ Not built yet |
+| `/agency` | Yes | `agency` role only | ⬜ Not built yet |
+
+## CSS Design System (globals.css)
+
+All UI is written in plain CSS with these shared tokens and classes. **Do not add a CSS library — extend globals.css.**
+
+**Tokens:**
+```css
+--brand: #ff385c   /* Airbnb red — CTAs, icons */
+--teal: #008489    /* Trust, success, cleaner chip */
+--gold: #b7791f    /* Warnings, ratings, assigned status */
+--ink: #111111     /* Heavy headings */
+--muted: #6a6a6a   /* Secondary text */
+--line: #dddddd    /* Borders and dividers */
+--surface: #ffffff /* Card backgrounds */
+--radius: 8px
+```
+
+**Shared classes:**
+- `.eyebrow` — uppercase label in `--brand`
+- `.site-brand` — logo + text combo
+- `.user-chip` — logged-in user pill in header
+- `.text-link` — header nav link / button
+- `.primary-link` — brand-red filled button
+- `.secondary-link` — bordered outline button
+- `.form-error` — red error box inside forms
+- `.form-grid` — 2-column label grid inside forms
+- `.admin-gate` — centered "access denied / not logged in" card
+
+**Page shells:**
+- `.auth-page` / `.auth-panel` — login and signup pages
+- `.app-page` / `.app-shell` — generic workspace at `/app`
+- `.admin-page` / `.admin-topbar` / `.admin-body` / `.admin-sidebar` / `.admin-main` — admin panel
+- `.host-page` / `.host-topbar` / `.host-section` / `.host-calendar` / `.host-job-*` — host dashboard
+
+**Modal pattern (used in host dashboard):**
+```
+.host-modal-backdrop   (fixed full-screen overlay)
+  .host-modal          (centered white card)
+    .host-modal-header
+    .host-form
+      .form-grid
+      .host-form-actions
 ```
 
 ## Git / GitHub

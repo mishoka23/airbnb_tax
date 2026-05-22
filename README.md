@@ -39,17 +39,33 @@ Default URLs:
 
 ## Current Implementation Status
 
-The repository now contains the first implementation scaffold:
+### Backend (complete for v1 domain logic)
 
-- Django project and domain apps.
-- Initial database models and migrations.
-- REST API route groups.
-- Session-cookie signup, login, logout, and current-user APIs.
-- Manual account approval states and admin approval actions.
+- Django project and domain apps (`accounts`, `properties`, `marketplace`, `calendars`, `feedback`, `notifications`).
+- Session-cookie signup, login, logout, and current-user APIs with CSRF enforcement.
+- Account approval states (pending / approved / rejected / suspended) and admin approve/reject/suspend actions.
 - Agency profiles, invitations, memberships, and delegated cleaner assignments.
 - Cookie consent records for optional analytics and marketing cookies.
-- Marketplace service functions for publishing jobs, applying, accepting, completing, and reviewing.
+- Property management: CRUD, external calendar connections, reservations.
+- Marketplace service functions: publish jobs, submit applications, accept applications, complete jobs, two-way reviews.
 - Notification records and placeholder Celery tasks.
 - Calendar conflict API and placeholder sync tasks.
-- Next.js landing page, login/signup pages, protected app entry, and cookie consent banner.
-- Docker Compose local infrastructure.
+
+### Frontend (Next.js App Router)
+
+| Route | Status | Description |
+|---|---|---|
+| `/` | ✅ Done | Public landing page — auth-aware header with role-based dashboard link |
+| `/login` | ✅ Done | Session login |
+| `/signup` | ✅ Done | Role-based signup (host / cleaner / agency) |
+| `/app` | ✅ Done | Generic workspace — auto-redirects hosts → `/host`, admins → `/admin` |
+| `/admin` | ✅ Done | Admin approval dashboard — list / filter / approve / reject accounts |
+| `/host` | ✅ Done | Host dashboard — property CRUD, job posting, month calendar view, publish jobs |
+| `/cleaner` | ⬜ Not built | Cleaner dashboard — profile, browse open jobs, apply |
+| `/agency` | ⬜ Not built | Agency dashboard — manage members, view assigned jobs |
+
+### Shared infrastructure
+
+- `frontend/lib/api.ts` — `apiFetch` wrapper with automatic CSRF token injection and `Content-Type`.
+- `frontend/next.config.mjs` — `trailingSlash: true` + dual rewrite rules for Django `APPEND_SLASH` compatibility.
+- `frontend/app/globals.css` — CSS design tokens and shared component classes (see DEV.md for details).

@@ -35,14 +35,25 @@ Current implementation modules:
 
 Current frontend implementation:
 
-- `frontend/app/page.tsx`: public landing page with Airbnb-inspired structure, hero imagery, search-style lead form, launch markets, trust messaging, and host/cleaner calls to action.
-- `frontend/app/login/page.tsx`: session-cookie login screen.
-- `frontend/app/signup/page.tsx`: basic role-based signup for property owners, cleaners, and agencies.
-- `frontend/app/app/page.tsx`: protected entry route that shows pending approval or approved workspace state.
-- `frontend/app/components/CookieConsentBanner.tsx`: consent-first cookie banner for anonymous and logged-in visitors.
-- `frontend/app/globals.css`: public landing page styling.
-- The landing page is interactive locally but does not yet persist lead/search data to the backend.
-- The previous dashboard-like first screen should be treated as superseded; operational dashboards should move behind auth in future routes such as `/app`, `/host`, `/cleaner`, or `/admin`.
+- `frontend/lib/api.ts`: shared HTTP client. All pages use `apiFetch` — it injects `Content-Type` and reads the Django `csrftoken` cookie to set `X-CSRFToken` on state-changing requests. Never call `fetch` directly.
+- `frontend/next.config.mjs`: `trailingSlash: true` + two `/api/:path*` rewrite rules that proxy to the Django backend while preserving trailing slashes for `APPEND_SLASH` compatibility.
+- `frontend/app/page.tsx`: public landing page. Auth-aware header shows role-correct dashboard link when a session exists (`/admin` for admins, `/host` for hosts, `/app` for cleaners/agencies). Search form uses local state only — not yet connected to backend.
+- `frontend/app/login/page.tsx`: session login — redirects to `/` on success.
+- `frontend/app/signup/page.tsx`: role-based signup for host / cleaner / agency — redirects to `/app` on success.
+- `frontend/app/app/page.tsx`: generic authenticated workspace. Automatically redirects hosts to `/host` and admins to `/admin`. For cleaners and agencies shows account status.
+- `frontend/app/admin/page.tsx`: admin account approval panel. Lists all accounts, filters by pending / approved / all. Approve and reject actions call `POST /api/accounts/users/{id}/approve/` and `/reject/`. Accessible to `admin` role only.
+- `frontend/app/host/page.tsx`: host dashboard with two sections toggled in the topbar:
+  - **Properties** — lists host properties as cards with job counts. "Add property" modal POSTs to `POST /api/properties/properties/`.
+  - **Jobs & Calendar** — custom month calendar grid with coloured status dots per day. "Post a job" modal POSTs to `POST /api/marketplace/jobs/` (saved as Draft). Publish button calls `POST /api/marketplace/jobs/{id}/publish/` to transition Draft → Open.
+- `frontend/app/components/CookieConsentBanner.tsx`: consent-first GDPR cookie banner.
+- `frontend/app/globals.css`: single CSS file for all routes using plain CSS variables and named component classes. No CSS library.
+
+Not yet built:
+- `/cleaner` — cleaner dashboard (profile, browse open jobs, apply for jobs).
+- `/agency` — agency dashboard (manage members, view jobs).
+- Applications review panel inside the host dashboard.
+- Cleaner verification flow in the admin panel.
+- Real search connected to the backend cleaner/agency API.
 
 ## Product Domains
 

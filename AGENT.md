@@ -90,13 +90,68 @@ When code exists:
 
 ## Current Implementation State
 
-- Backend exists under `backend/` as a Django/DRF modular monolith.
-- Frontend exists under `frontend/` as a Next.js app.
-- The public landing page lives at `frontend/app/page.tsx`.
-- The current landing page uses local UI state only; search/lead actions are not yet persisted to the backend.
-- Backend domain apps include accounts, properties, marketplace, calendars, feedback, and notifications.
-- Marketplace services currently cover publishing jobs, verified cleaner applications, accepting applications, completing jobs, and submitting reviews.
-- Google Calendar, iCal parsing, email/SMS providers, and object storage are placeholder boundaries, not finished integrations.
+### Backend — complete for v1 domain logic
+
+- Modular Django/DRF monolith under `backend/`.
+- All domain apps wired: `accounts`, `properties`, `marketplace`, `calendars`, `feedback`, `notifications`.
+- Session-cookie auth with CSRF enforcement (`ensure_csrf_cookie` on all auth views, `X-CSRFToken` required on state-changing requests).
+- Account approval states and admin approve/reject/suspend actions fully working.
+- Agency profiles, invitations, memberships, and member assignment fully working.
+- Property CRUD, cleaning job CRUD, batch CRUD, application workflow, assignment, completion, two-way reviews all implemented in service layer.
+- Notification records exist; email/SMS/provider dispatch is a placeholder.
+- Calendar conflict API exists; Google Calendar sync and iCal parsing are placeholders.
+
+### Frontend — what exists
+
+**`frontend/lib/api.ts`** — all API calls must go through `apiFetch`. It:
+- Adds `Content-Type: application/json` when a body is present.
+- Reads `csrftoken` cookie and adds `X-CSRFToken` header on POST/PUT/PATCH/DELETE.
+- Returns raw `Response` — callers check `.ok` and call `.json()`.
+
+**`frontend/next.config.mjs`** — critical config:
+- `trailingSlash: true` — required so Next.js does not strip slashes before Django sees them.
+- Two rewrite rules matching `/api/:path*/` and `/api/:path*` — required to preserve trailing slashes through to Django's `APPEND_SLASH`.
+
+**`frontend/app/page.tsx`** — public landing page:
+- Auth-aware header: shows role-correct dashboard link (`/admin` for admins, `/host` for hosts, `/app` for others) when logged in; shows "Log in" when not.
+- Search form uses local state only — not connected to real backend yet.
+
+**`frontend/app/login/page.tsx`** — session login, redirects to `/` after success.
+
+**`frontend/app/signup/page.tsx`** — role-based signup (host / cleaner / agency), redirects to `/app` after success.
+
+**`frontend/app/app/page.tsx`** — generic workspace:
+- Auto-redirects: hosts → `/host`, admins → `/admin`.
+- For cleaners/agencies: shows account status (pending / approved / rejected / suspended).
+
+**`frontend/app/admin/page.tsx`** — admin approval panel:
+- Gate: redirects to `/login` if unauthenticated, shows "Admin only" if not admin role.
+- Fetches `GET /api/accounts/users/` (all accounts, filtered client-side).
+- Three filters: pending / approved / all.
+- Approve: `POST /api/accounts/users/{id}/approve/` — updates local state immediately.
+- Reject: `POST /api/accounts/users/{id}/reject/` — updates local state immediately.
+
+**`frontend/app/host/page.tsx`** — host dashboard:
+- Gate: redirects to `/login` if unauthenticated, shows "Hosts only" if not host role.
+- Pending hosts see a gold banner but can still view the UI.
+- **Properties section**: lists properties as cards with job counts and default settings. "Add property" opens a modal that POSTs to `POST /api/properties/properties/`.
+- **Jobs & Calendar section**:
+  - Month calendar (custom 7-column CSS grid, Mon–Sun), prev/next navigation.
+  - Coloured dots per day: grey (draft), teal (open), gold (assigned), green (done), red (cancelled), orange (disputed).
+  - Clicking an empty day pre-fills the job form with that date.
+  - Clicking a day with jobs filters the list panel to that day.
+  - Job list panel shows: title, property, time range, status badge, price, Publish button for drafts.
+  - "Post a job" modal POSTs to `POST /api/marketplace/jobs/` — saved as Draft.
+  - Publish button calls `POST /api/marketplace/jobs/{id}/publish/` — transitions Draft → Open.
+
+### What is NOT built yet (next priorities)
+
+1. **`/cleaner` dashboard** — cleaner profile view, browse open jobs, apply for a job (`POST /api/marketplace/applications/`).
+2. **Applications panel in host dashboard** — host sees applications per job, calls `POST /api/marketplace/applications/{id}/accept/`.
+3. **`/agency` dashboard** — agency manages members, views assigned jobs.
+4. **Cleaner verification** — admin marks cleaner as verified before they can apply.
+5. **Real search on landing page** — connect to `GET /api/accounts/cleaners/` with location filter.
+6. **Calendar integrations** — iCal import, Google Calendar sync (backend placeholders exist).
 
 ## Before Making Changes
 
