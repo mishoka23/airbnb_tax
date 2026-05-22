@@ -212,11 +212,26 @@ export default function Home() {
           {loading && <p>Loading...</p>}
           {results.length > 0 && (
             <div className="search-results">
-              <h3>Available Cleaners</h3>
+              <p className="search-results-label">
+                {results.length} cleaner{results.length !== 1 ? "s" : ""} near {city}
+              </p>
               <ul>
                 {results.map((cleaner) => (
-                  <li key={cleaner.name}>
-                    <strong>{cleaner.name}</strong> ({cleaner.area}) - {cleaner.type} | Rating: {cleaner.rating}
+                  <li key={cleaner.name} className="search-result-item">
+                    <div
+                      className="search-result-avatar"
+                      role="img"
+                      aria-label={cleaner.name}
+                      style={{ backgroundImage: `url(${cleaner.image})` }}
+                    />
+                    <div className="search-result-info">
+                      <strong>{cleaner.name}</strong>
+                      <span>{cleaner.area} · {cleaner.type}</span>
+                    </div>
+                    <span className="search-result-badge">
+                      <Star size={12} aria-hidden />
+                      {cleaner.rating}
+                    </span>
                   </li>
                 ))}
               </ul>
