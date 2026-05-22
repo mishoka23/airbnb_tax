@@ -144,6 +144,11 @@ export default function Home() {
                     <AdminIcon size={15} aria-hidden />
                     Admin panel
                   </a>
+                ) : currentUser.role === "host" ? (
+                  <a className="text-link" href="/host">
+                    <LayoutDashboard size={15} aria-hidden />
+                    Dashboard
+                  </a>
                 ) : (
                   <a className="text-link" href="/app">
                     <LayoutDashboard size={15} aria-hidden />

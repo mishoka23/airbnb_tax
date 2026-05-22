@@ -43,6 +43,16 @@ export default function AppEntryPage() {
       const response = await apiFetch("/api/accounts/me/");
       if (response.ok) {
         const data = (await response.json()) as CurrentUser;
+        // Redirect approved hosts straight to their dedicated dashboard
+        if (data.role === "host") {
+          window.location.replace("/host");
+          return;
+        }
+        // Redirect admins to the admin panel
+        if (data.role === "admin") {
+          window.location.replace("/admin");
+          return;
+        }
         setUser(data);
       }
       setLoading(false);
