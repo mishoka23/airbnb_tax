@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { CheckCircle2, Clock3, LogOut, ShieldAlert, UserRoundCog } from "lucide-react";
+import { CheckCircle2, Clock3, LogOut, ShieldCheck, ShieldAlert, UserRoundCog } from "lucide-react";
 import { CurrentUser, apiFetch, roleLabel } from "../../lib/api";
 
 function statusCopy(user: CurrentUser) {
@@ -99,10 +99,18 @@ export default function AppEntryPage() {
             </span>
             <strong>Host Cleaners</strong>
           </Link>
-          <button className="secondary-link logout-button" type="button" onClick={logout}>
-            <LogOut size={16} aria-hidden />
-            Log out
-          </button>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            {user.role === "admin" && (
+              <Link className="secondary-link logout-button" href="/admin">
+                <ShieldCheck size={16} aria-hidden />
+                Admin panel
+              </Link>
+            )}
+            <button className="secondary-link logout-button" type="button" onClick={logout}>
+              <LogOut size={16} aria-hidden />
+              Log out
+            </button>
+          </div>
         </header>
 
         <div className="status-panel">

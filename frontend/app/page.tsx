@@ -11,7 +11,7 @@ import {
   Menu,
   Search,
   ShieldCheck,
-  Sparkles,
+  ShieldCheck as AdminIcon,
   Star,
   UserRoundCheck,
   Users,
@@ -139,10 +139,17 @@ export default function Home() {
           {!loadingAuth && (
             currentUser ? (
               <>
-                <a className="text-link" href="/app">
-                  <LayoutDashboard size={15} aria-hidden />
-                  Dashboard
-                </a>
+                {currentUser.role === "admin" ? (
+                  <a className="text-link" href="/admin">
+                    <AdminIcon size={15} aria-hidden />
+                    Admin panel
+                  </a>
+                ) : (
+                  <a className="text-link" href="/app">
+                    <LayoutDashboard size={15} aria-hidden />
+                    Dashboard
+                  </a>
+                )}
                 <span className="user-chip">
                   {currentUser.first_name || currentUser.email.split("@")[0]}
                   <span className="user-chip-dot" aria-hidden>·</span>
