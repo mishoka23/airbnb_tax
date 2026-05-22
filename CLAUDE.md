@@ -4,12 +4,13 @@ Bulgarian-market marketplace connecting short-term rental hosts with verified cl
 
 ## Documentation Map
 
+- `TGN.md` — **Temporal Graph Network**: full entity graph, state machines, module dependencies, API surface, event/task graph, data model summary, and critical rules index. **Read this first in any new session.**
 - `AGENT.md` — agent working rules, marketplace invariants, code quality rules, handoff expectations
 - `BUSINESS.md` — business strategy, target users, monetization hypotheses, open questions
 - `architecture.md` — technical architecture, domain boundaries, API shape, future service boundaries
 - `DEV.md` — stack, local dev setup, test commands, documentation expectations
 
-Read `AGENT.md` before making any changes. Read `BUSINESS.md` before product, marketplace, or monetization changes.
+Read `TGN.md` at the start of every session to reconstruct full project context. Read `AGENT.md` before making any changes. Read `BUSINESS.md` before product, marketplace, or monetization changes.
 
 ## Stack
 
