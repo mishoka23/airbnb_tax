@@ -1,5 +1,9 @@
 # Business Strategy
 
+## Restart Handoff
+
+Machine hosting work is paused for a required Windows restart so Docker Desktop can run. See `CURRENT_PROGRESS.md` for the deployment resume point.
+
 ## Business Concept
 
 The product is a Bulgarian-market marketplace that connects short-term rental hosts with verified cleaners and cleaning agencies.

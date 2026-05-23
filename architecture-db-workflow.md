@@ -1,5 +1,9 @@
 # Database Schema and Application Workflow
 
+## Restart Handoff
+
+Deployment work is paused for a required Windows restart so Docker Desktop can run. See `CURRENT_PROGRESS.md` for resume steps.
+
 ## Database Schema (ER Diagram)
 
 ```mermaid

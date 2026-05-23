@@ -1,5 +1,9 @@
 # Agent Instructions
 
+## Restart Handoff
+
+Before doing more deployment work, read `CURRENT_PROGRESS.md`. Docker Desktop requires a Windows restart, and container build/start verification has not run yet.
+
 ## Mission
 
 Help build and maintain a Bulgarian-market marketplace that connects short-term rental hosts with verified cleaners.

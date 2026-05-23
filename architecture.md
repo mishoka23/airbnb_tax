@@ -1,5 +1,9 @@
 # Architecture
 
+## Restart Handoff
+
+Production hosting changes have been added, but Docker Desktop needs a Windows restart before build/start verification. See `CURRENT_PROGRESS.md`.
+
 ## Overview
 
 The application is a service-ready modular marketplace for Bulgarian Airbnb and short-term rental hosts who need reliable cleaners.

@@ -1,5 +1,9 @@
 # Host Cleaner Marketplace
 
+## Restart Handoff
+
+Docker Desktop requires a Windows restart before the production stack can be built and started. See `CURRENT_PROGRESS.md` for the exact resume point, completed deployment work, and next commands.
+
 Marketplace for Bulgarian short-term rental hosts, verified cleaners, and cleaning agencies.
 
 The MVP focuses on job posting, monthly cleaning batches, Airbnb iCal imports, cleaner applications, assignment, shared calendar coordination, email notifications, and two-way feedback. Payments are intentionally out of scope for v1.
@@ -9,6 +13,7 @@ The MVP focuses on job posting, monthly cleaning batches, Airbnb iCal imports, c
 - `BUSINESS.md`: business strategy, target market, monetization hypotheses, risks, and open questions.
 - `architecture.md`: technical architecture and domain boundaries.
 - `DEV.md`: development setup and operating guide.
+- `DEPLOY.md`: production-style Docker hosting, Windows firewall, and router forwarding guide.
 - `AGENT.md`: instructions for AI and developer agents.
 
 ## Stack
@@ -38,6 +43,12 @@ Default URLs:
 - Django admin: `http://localhost:8000/admin/`
 
 > **Local dev without Docker**: comment out `DATABASE_URL` in `.env` — Django falls back to SQLite automatically. Celery is optional; tasks run synchronously without it.
+
+## Host From This Machine
+
+Production-style local hosting is defined in `docker-compose.prod.yml` with Caddy as the only public entrypoint on ports `80` and `443`. It keeps PostgreSQL, Redis, Django, Celery, and Next.js on Docker's private network.
+
+See `DEPLOY.md` for the full Docker Desktop, Windows firewall, router forwarding, and verification steps.
 
 ## Current Implementation Status
 

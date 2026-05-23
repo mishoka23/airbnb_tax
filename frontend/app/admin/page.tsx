@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   CheckCircle2,
@@ -37,7 +37,7 @@ const STATUS_FILTER_LABELS: Record<Filter, string> = {
   all: "All accounts",
 };
 
-export default function AdminPage() {
+function AdminPageContent() {
   const searchParams = useSearchParams();
   const initialFilter = (["pending", "approved", "all"].includes(searchParams.get("filter") ?? "")
     ? searchParams.get("filter")
@@ -354,5 +354,13 @@ export default function AdminPage() {
         </section>
       </div>
     </main>
+  );
+}
+
+export default function AdminPage() {
+  return (
+    <Suspense fallback={<main className="admin-page">Loading...</main>}>
+      <AdminPageContent />
+    </Suspense>
   );
 }

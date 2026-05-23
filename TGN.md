@@ -1,5 +1,9 @@
 # Temporal Graph Network — Host Cleaner Marketplace
 
+## Restart Handoff
+
+Deployment work is paused for a required Windows restart so Docker Desktop can run. Read `CURRENT_PROGRESS.md` before continuing.
+
 This document is a machine-readable knowledge graph of the entire project.
 It maps every domain entity, relationship, state machine, module dependency,
 frontend data flow, and event trigger — including what is implemented vs planned.

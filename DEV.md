@@ -1,5 +1,9 @@
 # Development Guide
 
+## Restart Handoff
+
+Docker Desktop requires a Windows restart before the production stack can be built and started. See `CURRENT_PROGRESS.md` for the current deployment progress and resume commands.
+
 ## Project Purpose
 
 This project is a Bulgarian-market marketplace for connecting Airbnb and short-term rental hosts with verified cleaners.

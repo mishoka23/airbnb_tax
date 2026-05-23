@@ -1,5 +1,9 @@
 # Host Cleaner Marketplace — Claude Code Guide
 
+## Restart Handoff
+
+Before continuing deployment, read `CURRENT_PROGRESS.md`. Docker Desktop requires a Windows restart and the production stack has not been built or started yet.
+
 Bulgarian-market marketplace connecting short-term rental hosts with verified cleaners. MVP covers job posting, cleaner applications, assignment, calendar coordination, notifications, and two-way reviews. No in-app payments in v1.
 
 ## Documentation Map
