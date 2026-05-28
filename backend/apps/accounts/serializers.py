@@ -220,7 +220,7 @@ class SignupSerializer(serializers.Serializer):
             email=email,
             first_name=first_name,
             last_name=last_name,
-            account_status=User.AccountStatus.PENDING,
+            account_status=User.AccountStatus.APPROVED,
             email_verified_at=timezone.now(),
             **validated_data,
         )
@@ -243,6 +243,7 @@ class SignupSerializer(serializers.Serializer):
                 driving_license_categories=driving_license_categories,
                 has_own_car=has_own_car,
                 smoker=smoker,
+                verification_status=CleanerProfile.VerificationStatus.VERIFIED,
             )
         elif user.is_agency:
             company_name = f"{first_name} {last_name}".strip()
