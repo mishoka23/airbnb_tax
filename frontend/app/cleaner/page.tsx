@@ -47,6 +47,7 @@ interface AssignmentSummary {
   job_status?: JobStatus;
   job_property_name?: string;
   job_property_city?: string;
+  job_property_neighborhood?: string;
   agreed_price: string | null;
   assigned_at: string;
   completed_at: string | null;
@@ -57,6 +58,7 @@ interface CleaningJob {
   property: number;
   property_name?: string;
   property_city?: string;
+  property_neighborhood?: string;
   property_address?: string;
   host: number;
   host_name?: string;
@@ -81,6 +83,7 @@ interface CleanerApplication {
   job_status?: JobStatus;
   job_property_name?: string;
   job_property_city?: string;
+  job_property_neighborhood?: string;
   status: ApplicationStatus;
   proposed_price: string | null;
   message: string;
@@ -245,6 +248,7 @@ export default function CleanerDashboard() {
   const [loadingCalendar, setLoadingCalendar] = useState(false);
   const [dataError, setDataError] = useState("");
   const [section, setSection] = useState<Section>("calendar");
+  const [jobCityFilter, setJobCityFilter] = useState<string>("");
 
   const now = useMemo(() => new Date(), []);
   const [calYear, setCalYear] = useState(now.getFullYear());
@@ -492,10 +496,21 @@ export default function CleanerDashboard() {
     return map;
   }, [jobs]);
 
-  const openJobs = useMemo(
-    () => jobs.filter((job) => job.status === "open").sort((a, b) => a.scheduled_start.localeCompare(b.scheduled_start)),
-    [jobs],
-  );
+  const openJobs = useMemo(() => {
+    let result = jobs.filter((job) => job.status === "open");
+    if (jobCityFilter) {
+      result = result.filter((job) => (job.property_city ?? "").toLowerCase() === jobCityFilter.toLowerCase());
+    }
+    return result.sort((a, b) => a.scheduled_start.localeCompare(b.scheduled_start));
+  }, [jobs, jobCityFilter]);
+
+  const availableJobCities = useMemo(() => {
+    const cities = new Set<string>();
+    jobs.filter((job) => job.status === "open").forEach((job) => {
+      if (job.property_city) cities.add(job.property_city);
+    });
+    return Array.from(cities).sort();
+  }, [jobs]);
 
   const activeAssignments = useMemo(
     () => assignments.filter((assignment) => !assignment.completed_at),
@@ -874,12 +889,37 @@ export default function CleanerDashboard() {
               </article>
             </div>
 
+            {availableJobCities.length > 1 && (
+              <div className="cleaner-location-filter">
+                <span className="cleaner-location-filter-label">Filter by city:</span>
+                <div className="cleaner-filter-chips">
+                  <button
+                    type="button"
+                    className={`cleaner-filter-chip${!jobCityFilter ? " active" : ""}`}
+                    onClick={() => setJobCityFilter("")}
+                  >
+                    All
+                  </button>
+                  {availableJobCities.map((city) => (
+                    <button
+                      key={city}
+                      type="button"
+                      className={`cleaner-filter-chip${jobCityFilter === city ? " active" : ""}`}
+                      onClick={() => setJobCityFilter(jobCityFilter === city ? "" : city)}
+                    >
+                      {city}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {loadingData ? (
               <p className="host-empty">Loading jobs...</p>
             ) : openJobs.length === 0 ? (
               <div className="host-empty-state">
                 <Briefcase size={40} />
-                <p>No open jobs are visible right now.</p>
+                <p>{jobCityFilter ? `No open jobs in ${jobCityFilter} right now.` : "No open jobs are visible right now."}</p>
               </div>
             ) : (
               <ul className="cleaner-job-list">
@@ -895,7 +935,13 @@ export default function CleanerDashboard() {
                       <div className="cleaner-job-main">
                         <div>
                           <strong>{job.title}</strong>
-                          <span>{jobPlace(job)}{job.host_name ? ` - ${job.host_name}` : ""}</span>
+                          <span className="job-location-tag">
+                            {job.property_city ?? ""}
+                            {job.property_neighborhood ? (
+                              <span className="job-location-neighborhood">{job.property_neighborhood}</span>
+                            ) : null}
+                            {job.property_name ? ` · ${job.property_name}` : ""}
+                          </span>
                         </div>
                         {(job.description || job.cleaning_instructions) && (
                           <p>{job.description || job.cleaning_instructions}</p>

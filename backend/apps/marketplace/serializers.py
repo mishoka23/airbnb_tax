@@ -36,6 +36,7 @@ class AssignmentSerializer(serializers.ModelSerializer):
     job_status = serializers.CharField(source="job.status", read_only=True)
     job_property_name = serializers.CharField(source="job.property.name", read_only=True)
     job_property_city = serializers.CharField(source="job.property.city", read_only=True)
+    job_property_neighborhood = serializers.CharField(source="job.property.neighborhood", read_only=True)
 
     class Meta:
         model = Assignment
@@ -48,6 +49,7 @@ class AssignmentSerializer(serializers.ModelSerializer):
             "job_status",
             "job_property_name",
             "job_property_city",
+            "job_property_neighborhood",
             "cleaner",
             "assigned_member",
             "application",
@@ -78,6 +80,7 @@ class MarketplaceCalendarItemSerializer(serializers.Serializer):
     price = serializers.DecimalField(max_digits=8, decimal_places=2, required=False, allow_null=True)
     property_name = serializers.CharField()
     property_city = serializers.CharField(allow_blank=True)
+    property_neighborhood = serializers.CharField(allow_blank=True)
     host_name = serializers.CharField()
     job_status = serializers.CharField()
     application_status = serializers.CharField(required=False, allow_blank=True)
@@ -103,6 +106,7 @@ class CleaningJobSerializer(serializers.ModelSerializer):
     host_name = serializers.SerializerMethodField()
     property_name = serializers.CharField(source="property.name", read_only=True)
     property_city = serializers.CharField(source="property.city", read_only=True)
+    property_neighborhood = serializers.CharField(source="property.neighborhood", read_only=True)
     property_address = serializers.CharField(source="property.address", read_only=True)
     assignment = AssignmentSerializer(read_only=True)
 
@@ -114,6 +118,7 @@ class CleaningJobSerializer(serializers.ModelSerializer):
             "property",
             "property_name",
             "property_city",
+            "property_neighborhood",
             "property_address",
             "host",
             "host_name",
@@ -168,6 +173,7 @@ class CleanerApplicationSerializer(serializers.ModelSerializer):
     job_status = serializers.CharField(source="job.status", read_only=True)
     job_property_name = serializers.CharField(source="job.property.name", read_only=True)
     job_property_city = serializers.CharField(source="job.property.city", read_only=True)
+    job_property_neighborhood = serializers.CharField(source="job.property.neighborhood", read_only=True)
 
     class Meta:
         model = CleanerApplication
@@ -181,6 +187,7 @@ class CleanerApplicationSerializer(serializers.ModelSerializer):
             "job_status",
             "job_property_name",
             "job_property_city",
+            "job_property_neighborhood",
             "cleaner",
             "status",
             "proposed_price",

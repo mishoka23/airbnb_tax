@@ -69,6 +69,7 @@ def job_calendar_payload(job, item_type, user, application=None, assignment=None
         "price": price,
         "property_name": job.property.name,
         "property_city": job.property.city,
+        "property_neighborhood": job.property.neighborhood,
         "host_name": job.host.get_full_name() or job.host.get_username(),
         "job_status": job.status,
         "application_status": getattr(application, "status", ""),
@@ -284,7 +285,14 @@ class CleaningJobViewSet(MarketplaceQuerysetMixin, viewsets.ModelViewSet):
         queryset = CleaningJob.objects.select_related("property", "host", "batch").prefetch_related(
             "applications"
         )
-        return self.filter_for_user(queryset)
+        queryset = self.filter_for_user(queryset)
+        city = self.request.query_params.get("city", "").strip()
+        neighborhood = self.request.query_params.get("neighborhood", "").strip()
+        if city:
+            queryset = queryset.filter(property__city__iexact=city)
+        if neighborhood:
+            queryset = queryset.filter(property__neighborhood__icontains=neighborhood)
+        return queryset
 
     def perform_create(self, serializer):
         property = serializer.validated_data["property"]

@@ -1,0 +1,16 @@
+# Redis broker
+cd "C:\Users\d.yordanov\OneDrive - Intelligent Systems Bulgaria Ltd\Personal\Personal Projects\AirBnbMarketplace\airbnb_tax\backend\.tools\redis"
+redis-server.exe --bind 127.0.0.1 --port 6379 --appendonly no
+
+# Backend
+cd "C:\Users\d.yordanov\OneDrive - Intelligent Systems Bulgaria Ltd\Personal\Personal Projects\AirBnbMarketplace\airbnb_tax\backend"
+python manage.py runserver
+
+# Celery worker, from backend/
+.\.venv\Scripts\Activate.ps1
+cd "C:\Users\d.yordanov\OneDrive - Intelligent Systems Bulgaria Ltd\Personal\Personal Projects\AirBnbMarketplace\airbnb_tax\backend"
+python -m celery -A config worker --loglevel=info --pool=solo
+
+# Run Frontend
+cd "C:\Users\d.yordanov\OneDrive - Intelligent Systems Bulgaria Ltd\Personal\Personal Projects\AirBnbMarketplace\airbnb_tax\frontend"
+npm.cmd run dev -- --hostname 0.0.0.0

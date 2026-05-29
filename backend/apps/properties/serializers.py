@@ -1,10 +1,35 @@
+from django.conf import settings as django_settings
 from rest_framework import serializers
 
-from apps.properties.models import ExternalCalendarConnection, Property, Reservation
+from apps.properties.models import ExternalCalendarConnection, Property, PropertyImage, Reservation
+
+
+class PropertyImageSerializer(serializers.ModelSerializer):
+    property_id = serializers.PrimaryKeyRelatedField(
+        source="property",
+        queryset=Property.objects.all(),
+        write_only=True,
+    )
+
+    class Meta:
+        model = PropertyImage
+        fields = ["id", "property_id", "image", "caption", "order", "created_at"]
+        read_only_fields = ["id", "created_at"]
+
+    def to_representation(self, instance):
+        ret = super().to_representation(instance)
+        # DRF's ImageField uses request.build_absolute_uri(), which picks up the
+        # proxy Host header (localhost:3000) instead of the real Django host.
+        # Always build the image URL from BACKEND_URL so it points at Django.
+        if instance.image:
+            backend = django_settings.BACKEND_URL.rstrip("/")
+            ret["image"] = f"{backend}{instance.image.url}"
+        return ret
 
 
 class PropertySerializer(serializers.ModelSerializer):
     host = serializers.PrimaryKeyRelatedField(read_only=True)
+    images = PropertyImageSerializer(many=True, read_only=True)
 
     class Meta:
         model = Property
@@ -14,12 +39,19 @@ class PropertySerializer(serializers.ModelSerializer):
             "name",
             "address",
             "city",
+            "neighborhood",
+            "latitude",
+            "longitude",
             "country",
             "timezone",
+            "description",
+            "bedrooms",
+            "square_meters",
             "access_notes",
             "cleaning_instructions",
             "default_cleaning_duration_minutes",
             "default_price_eur",
+            "images",
             "created_at",
             "updated_at",
         ]

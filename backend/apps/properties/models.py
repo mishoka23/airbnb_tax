@@ -13,8 +13,14 @@ class Property(TimeStampedModel):
     name = models.CharField(max_length=255)
     address = models.CharField(max_length=500, blank=True)
     city = models.CharField(max_length=120)
+    neighborhood = models.CharField(max_length=255, blank=True)
+    latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
     country = models.CharField(max_length=120, default="Bulgaria")
     timezone = models.CharField(max_length=64, default="Europe/Sofia")
+    description = models.TextField(blank=True)
+    bedrooms = models.PositiveSmallIntegerField(null=True, blank=True)
+    square_meters = models.DecimalField(max_digits=7, decimal_places=2, null=True, blank=True)
     access_notes = models.TextField(blank=True)
     cleaning_instructions = models.TextField(blank=True)
     default_cleaning_duration_minutes = models.PositiveIntegerField(default=120)
@@ -26,6 +32,23 @@ class Property(TimeStampedModel):
 
     def __str__(self) -> str:
         return f"{self.name} ({self.city})"
+
+
+class PropertyImage(TimeStampedModel):
+    property = models.ForeignKey(
+        Property,
+        on_delete=models.CASCADE,
+        related_name="images",
+    )
+    image = models.ImageField(upload_to="property_images/%Y/%m/")
+    caption = models.CharField(max_length=255, blank=True)
+    order = models.PositiveSmallIntegerField(default=0)
+
+    class Meta:
+        ordering = ["order", "id"]
+
+    def __str__(self) -> str:
+        return f"Image {self.id} for {self.property}"
 
 
 class ExternalCalendarConnection(TimeStampedModel):

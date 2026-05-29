@@ -1,7 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import dynamic from "next/dynamic";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import type { LocationResult } from "../components/PropertyLocationPicker";
+
+const PropertyLocationPicker = dynamic(
+  () => import("../components/PropertyLocationPicker"),
+  { ssr: false, loading: () => <div className="prop-map-loading">Loading map…</div> },
+);
 import {
   Building2,
   CalendarDays,
@@ -9,7 +16,9 @@ import {
   ChevronRight,
   Home as HomeIcon,
   LogOut,
+  Pencil,
   Plus,
+  Trash2,
   X,
 } from "lucide-react";
 import { Upload } from "lucide-react";
@@ -25,13 +34,27 @@ interface IcsEvent {
   nights: number;
 }
 
+interface PropertyImage {
+  id: number;
+  image: string;   // absolute URL from DRF
+  caption: string;
+  order: number;
+}
+
 interface Property {
   id: number;
   name: string;
   city: string;
+  neighborhood: string;
   address: string;
+  latitude: string | null;
+  longitude: string | null;
+  description: string;
+  bedrooms: number | null;
+  square_meters: string | null;
   default_cleaning_duration_minutes: number;
   default_price_eur: string | null;
+  images: PropertyImage[];
 }
 
 type JobStatus = "draft" | "open" | "assigned" | "completed" | "cancelled" | "disputed";
@@ -121,14 +144,28 @@ export default function HostDashboard() {
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
 
   // ── Property form ──────────────────────────────────────────────────────────
-  const [showPropForm, setShowPropForm] = useState(false);
-  const [propName,     setPropName]     = useState("");
-  const [propCity,     setPropCity]     = useState("Sofia");
-  const [propAddress,  setPropAddress]  = useState("");
-  const [propDuration, setPropDuration] = useState("120");
-  const [propPrice,    setPropPrice]    = useState("");
-  const [savingProp,   setSavingProp]   = useState(false);
-  const [propError,    setPropError]    = useState("");
+  const [showPropForm, setShowPropForm]  = useState(false);
+  const [editingPropId, setEditingPropId] = useState<number | null>(null);   // null = create mode
+  const [propName,          setPropName]          = useState("");
+  const [propCity,          setPropCity]          = useState("Sofia");
+  const [propAddress,       setPropAddress]       = useState("");
+  const [propNeighborhood,  setPropNeighborhood]  = useState("");
+  const [propLat,           setPropLat]           = useState<number | null>(null);
+  const [propLng,           setPropLng]           = useState<number | null>(null);
+  const [propDescription,   setPropDescription]   = useState("");
+  const [propBedrooms,      setPropBedrooms]      = useState("");
+  const [propSqm,           setPropSqm]           = useState("");
+  const [propDuration,      setPropDuration]      = useState("120");
+  const [propPrice,         setPropPrice]         = useState("");
+  const [savingProp,        setSavingProp]        = useState(false);
+  const [propError,         setPropError]         = useState("");
+
+  // Photo upload state
+  const [existingImages,    setExistingImages]    = useState<PropertyImage[]>([]);
+  const [newImageFiles,     setNewImageFiles]     = useState<File[]>([]);
+  const [newImagePreviews,  setNewImagePreviews]  = useState<string[]>([]);
+  const [deletingImageIds,  setDeletingImageIds]  = useState<Set<number>>(new Set());
+  const photoInputRef = useRef<HTMLInputElement>(null);
 
   // ── Job form ───────────────────────────────────────────────────────────────
   const [showJobForm,  setShowJobForm]  = useState(false);
@@ -188,32 +225,156 @@ export default function HostDashboard() {
     setLoadingData(false);
   }
 
-  // ── Create property ────────────────────────────────────────────────────────
+  // ── Open property form ─────────────────────────────────────────────────────
+  function openCreateProp() {
+    setEditingPropId(null);
+    setPropName(""); setPropCity("Sofia"); setPropAddress(""); setPropNeighborhood("");
+    setPropLat(null); setPropLng(null);
+    setPropDescription(""); setPropBedrooms(""); setPropSqm("");
+    setPropDuration("120"); setPropPrice("");
+    setExistingImages([]); setNewImageFiles([]); setNewImagePreviews([]);
+    setDeletingImageIds(new Set());
+    setPropError("");
+    setShowPropForm(true);
+  }
+
+  function openEditProp(p: Property) {
+    setEditingPropId(p.id);
+    setPropName(p.name);
+    setPropCity(p.city);
+    setPropAddress(p.address ?? "");
+    setPropNeighborhood(p.neighborhood ?? "");
+    setPropLat(p.latitude ? parseFloat(p.latitude) : null);
+    setPropLng(p.longitude ? parseFloat(p.longitude) : null);
+    setPropDescription(p.description ?? "");
+    setPropBedrooms(p.bedrooms != null ? String(p.bedrooms) : "");
+    setPropSqm(p.square_meters != null ? String(p.square_meters) : "");
+    setPropDuration(String(p.default_cleaning_duration_minutes));
+    setPropPrice(p.default_price_eur ?? "");
+    setExistingImages(p.images ?? []);
+    setNewImageFiles([]); setNewImagePreviews([]);
+    setDeletingImageIds(new Set());
+    setPropError("");
+    setShowPropForm(true);
+  }
+
+  function closePropForm() {
+    setShowPropForm(false);
+    // Revoke object URLs to avoid memory leaks
+    newImagePreviews.forEach((url) => URL.revokeObjectURL(url));
+    setNewImageFiles([]); setNewImagePreviews([]);
+  }
+
+  // ── Photo file handling ────────────────────────────────────────────────────
+  function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    if (files.length === 0) return;
+    const previews = files.map((f) => URL.createObjectURL(f));
+    setNewImageFiles((prev) => [...prev, ...files]);
+    setNewImagePreviews((prev) => [...prev, ...previews]);
+    // Reset input so same file can be re-selected
+    if (photoInputRef.current) photoInputRef.current.value = "";
+  }
+
+  function removeNewImage(idx: number) {
+    URL.revokeObjectURL(newImagePreviews[idx]);
+    setNewImageFiles((prev) => prev.filter((_, i) => i !== idx));
+    setNewImagePreviews((prev) => prev.filter((_, i) => i !== idx));
+  }
+
+  async function deleteExistingImage(imgId: number) {
+    setDeletingImageIds((prev) => new Set(prev).add(imgId));
+    const res = await apiFetch(`/api/properties/images/${imgId}/`, { method: "DELETE" });
+    if (res.ok || res.status === 204) {
+      setExistingImages((prev) => prev.filter((img) => img.id !== imgId));
+      // Also update the property in the main list
+      setProperties((prev) =>
+        prev.map((p) =>
+          p.id === editingPropId
+            ? { ...p, images: p.images.filter((img) => img.id !== imgId) }
+            : p,
+        ),
+      );
+    }
+    setDeletingImageIds((prev) => {
+      const next = new Set(prev);
+      next.delete(imgId);
+      return next;
+    });
+  }
+
+  async function uploadNewImages(propertyId: number) {
+    for (let i = 0; i < newImageFiles.length; i++) {
+      const formData = new FormData();
+      formData.append("property_id", String(propertyId));
+      formData.append("image", newImageFiles[i]);
+      formData.append("order", String(existingImages.length + i));
+      const res = await apiFetch("/api/properties/images/", { method: "POST", body: formData });
+      if (res.ok) {
+        const newImg = await res.json() as PropertyImage;
+        setProperties((prev) =>
+          prev.map((p) =>
+            p.id === propertyId ? { ...p, images: [...p.images, newImg] } : p,
+          ),
+        );
+      }
+    }
+  }
+
+  // ── Save property (create or update) ──────────────────────────────────────
   async function submitProperty(e: FormEvent) {
     e.preventDefault();
     setPropError("");
     setSavingProp(true);
     try {
-      const res = await apiFetch("/api/properties/properties/", {
-        method: "POST",
-        body: JSON.stringify({
-          name: propName,
-          city: propCity,
-          address: propAddress,
-          default_cleaning_duration_minutes: parseInt(propDuration) || 120,
-          default_price_eur: propPrice || null,
-        }),
-      });
+      const payload = {
+        name: propName,
+        city: propCity,
+        address: propAddress,
+        neighborhood: propNeighborhood,
+        latitude: propLat !== null ? parseFloat(propLat.toFixed(6)) : null,
+        longitude: propLng !== null ? parseFloat(propLng.toFixed(6)) : null,
+        description: propDescription,
+        bedrooms: propBedrooms ? parseInt(propBedrooms) : null,
+        square_meters: propSqm || null,
+        default_cleaning_duration_minutes: parseInt(propDuration) || 120,
+        default_price_eur: propPrice || null,
+      };
+
+      let res: Response;
+      if (editingPropId !== null) {
+        res = await apiFetch(`/api/properties/properties/${editingPropId}/`, {
+          method: "PATCH",
+          body: JSON.stringify(payload),
+        });
+      } else {
+        res = await apiFetch("/api/properties/properties/", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+      }
+
       if (!res.ok) {
         const data = await res.json() as Record<string, unknown>;
         const msgs = Object.values(data).flat().join(" ");
         setPropError(msgs || "Could not save property.");
         return;
       }
-      const newProp = await res.json() as Property;
-      setProperties((prev) => [...prev, newProp]);
-      setPropName(""); setPropCity("Sofia"); setPropAddress(""); setPropDuration("120"); setPropPrice("");
-      setShowPropForm(false);
+
+      const savedProp = await res.json() as Property;
+
+      if (editingPropId !== null) {
+        setProperties((prev) => prev.map((p) => (p.id === savedProp.id ? { ...p, ...savedProp } : p)));
+      } else {
+        setProperties((prev) => [...prev, { ...savedProp, images: [] }]);
+      }
+
+      // Upload any new photos
+      if (newImageFiles.length > 0) {
+        await uploadNewImages(savedProp.id);
+      }
+
+      closePropForm();
     } finally {
       setSavingProp(false);
     }
@@ -505,7 +666,7 @@ export default function HostDashboard() {
                 <button
                   className="primary-link"
                   type="button"
-                  onClick={() => { setPropError(""); setShowPropForm(true); }}
+                  onClick={openCreateProp}
                 >
                   <Plus size={16} aria-hidden />
                   Add property
@@ -523,7 +684,7 @@ export default function HostDashboard() {
                   <button
                     className="secondary-link"
                     type="button"
-                    onClick={() => { setPropError(""); setShowPropForm(true); }}
+                    onClick={openCreateProp}
                   >
                     Add your first property
                   </button>
@@ -534,32 +695,75 @@ export default function HostDashboard() {
                 {properties.map((p) => {
                   const pJobs    = jobs.filter((j) => j.property === p.id);
                   const active   = pJobs.filter((j) => ["open", "assigned"].includes(j.status)).length;
+                  const thumb    = p.images?.[0];
                   return (
                     <article key={p.id} className="host-property-card">
-                      <div className="host-property-card-top">
-                        <div className="host-property-icon"><Building2 size={20} /></div>
-                        <div>
-                          <strong>{p.name}</strong>
-                          <span>{p.city}{p.address ? ` · ${p.address}` : ""}</span>
+                      {/* Photo thumbnail */}
+                      {thumb ? (
+                        <div className="host-property-thumb">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={thumb.image} alt={p.name} />
+                          {p.images.length > 1 && (
+                            <span className="host-property-thumb-count">+{p.images.length - 1}</span>
+                          )}
                         </div>
-                      </div>
-                      <div className="host-property-stats">
-                        <div>
-                          <strong>{pJobs.length}</strong>
-                          <small>Total jobs</small>
+                      ) : (
+                        <div className="host-property-thumb host-property-thumb--empty">
+                          <Building2 size={28} />
                         </div>
-                        <div>
-                          <strong>{active}</strong>
-                          <small>Active</small>
-                        </div>
-                        <div>
-                          <strong>{p.default_cleaning_duration_minutes} min</strong>
-                          <small>Default clean</small>
-                        </div>
-                        {p.default_price_eur && (
+                      )}
+
+                      <div className="host-property-card-body">
+                        <div className="host-property-card-top">
                           <div>
-                            <strong>€{p.default_price_eur}</strong>
-                            <small>Default price</small>
+                            <strong>{p.name}</strong>
+                            <span>
+                              {p.city}
+                              {p.neighborhood ? ` · ${p.neighborhood}` : ""}
+                              {p.address ? ` · ${p.address}` : ""}
+                            </span>
+                            {(p.bedrooms != null || p.square_meters != null) && (
+                              <span className="host-property-meta">
+                                {p.bedrooms != null && `${p.bedrooms} bed${p.bedrooms !== 1 ? "s" : ""}`}
+                                {p.bedrooms != null && p.square_meters != null && " · "}
+                                {p.square_meters != null && `${p.square_meters} m²`}
+                              </span>
+                            )}
+                            {p.description && (
+                              <span className="host-property-desc">{p.description}</span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="host-property-stats">
+                          <div>
+                            <strong>{pJobs.length}</strong>
+                            <small>Total jobs</small>
+                          </div>
+                          <div>
+                            <strong>{active}</strong>
+                            <small>Active</small>
+                          </div>
+                          <div>
+                            <strong>{p.default_cleaning_duration_minutes} min</strong>
+                            <small>Default clean</small>
+                          </div>
+                          {p.default_price_eur && (
+                            <div>
+                              <strong>€{p.default_price_eur}</strong>
+                              <small>Default price</small>
+                            </div>
+                          )}
+                        </div>
+                        {isApproved && (
+                          <div className="host-property-card-actions">
+                            <button
+                              className="host-prop-edit-btn"
+                              type="button"
+                              onClick={() => openEditProp(p)}
+                            >
+                              <Pencil size={13} aria-hidden />
+                              Edit
+                            </button>
                           </div>
                         )}
                       </div>
@@ -767,19 +971,21 @@ export default function HostDashboard() {
       {showPropForm && (
         <div
           className="host-modal-backdrop"
-          onClick={() => setShowPropForm(false)}
+          onClick={closePropForm}
           role="dialog"
           aria-modal="true"
-          aria-label="Add property"
+          aria-label={editingPropId !== null ? "Edit property" : "Add property"}
         >
-          <div className="host-modal" onClick={(e) => e.stopPropagation()}>
+          <div className="host-modal host-modal--wide" onClick={(e) => e.stopPropagation()}>
             <div className="host-modal-header">
-              <h2>Add property</h2>
-              <button type="button" className="host-modal-close" onClick={() => setShowPropForm(false)} aria-label="Close">
+              <h2>{editingPropId !== null ? "Edit property" : "Add property"}</h2>
+              <button type="button" className="host-modal-close" onClick={closePropForm} aria-label="Close">
                 <X size={18} />
               </button>
             </div>
             <form className="host-form" onSubmit={(e) => void submitProperty(e)}>
+
+              {/* ── Basic info ── */}
               <div className="form-grid">
                 <label>
                   <span>Property name *</span>
@@ -792,19 +998,67 @@ export default function HostDashboard() {
                 </label>
                 <label>
                   <span>City *</span>
-                  <input
-                    required
-                    value={propCity}
-                    onChange={(e) => setPropCity(e.target.value)}
-                    placeholder="Sofia"
-                  />
+                  <select required value={propCity} onChange={(e) => { setPropCity(e.target.value); if (editingPropId === null) { setPropLat(null); setPropLng(null); } }}>
+                    <option value="Sofia">Sofia</option>
+                    <option value="Plovdiv">Plovdiv</option>
+                    <option value="Varna">Varna</option>
+                  </select>
                 </label>
-                <label style={{ gridColumn: "1 / -1" }}>
-                  <span>Address</span>
+              </div>
+
+              {/* ── Location map ── */}
+              <div className="prop-location-section">
+                <p className="prop-location-label">Pin location on map <span className="prop-location-hint">(click to set)</span></p>
+                <PropertyLocationPicker
+                  lat={propLat}
+                  lng={propLng}
+                  city={propCity}
+                  onSelect={(result: LocationResult) => {
+                    setPropAddress(result.address || propAddress);
+                    setPropNeighborhood(result.neighborhood || propNeighborhood);
+                    setPropLat(result.lat);
+                    setPropLng(result.lng);
+                  }}
+                />
+              </div>
+
+              <div className="form-grid">
+                <label>
+                  <span>Street address</span>
                   <input
                     value={propAddress}
                     onChange={(e) => setPropAddress(e.target.value)}
-                    placeholder="Street and number"
+                    placeholder="Auto-filled from map, or enter manually"
+                  />
+                </label>
+                <label>
+                  <span>Neighborhood / District</span>
+                  <input
+                    value={propNeighborhood}
+                    onChange={(e) => setPropNeighborhood(e.target.value)}
+                    placeholder="Auto-filled from map, or enter manually"
+                  />
+                </label>
+                <label>
+                  <span>Bedrooms</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={propBedrooms}
+                    onChange={(e) => setPropBedrooms(e.target.value)}
+                    placeholder="e.g. 2"
+                  />
+                </label>
+                <label>
+                  <span>Size (m²)</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.5"
+                    value={propSqm}
+                    onChange={(e) => setPropSqm(e.target.value)}
+                    placeholder="e.g. 65"
                   />
                 </label>
                 <label>
@@ -829,13 +1083,88 @@ export default function HostDashboard() {
                   />
                 </label>
               </div>
+
+              <label>
+                <span>Description</span>
+                <textarea
+                  rows={3}
+                  value={propDescription}
+                  onChange={(e) => setPropDescription(e.target.value)}
+                  placeholder="Describe the property for cleaners — layout, special features, parking…"
+                />
+              </label>
+
+              {/* ── Photos ── */}
+              <div className="prop-photos-section">
+                <p className="prop-photos-label">Photos</p>
+
+                {/* Existing images (edit mode) */}
+                {existingImages.length > 0 && (
+                  <div className="prop-photos-grid">
+                    {existingImages.map((img) => (
+                      <div key={img.id} className="prop-photo-thumb">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={img.image} alt={img.caption || "Property photo"} />
+                        <button
+                          type="button"
+                          className="prop-photo-delete"
+                          disabled={deletingImageIds.has(img.id)}
+                          onClick={() => void deleteExistingImage(img.id)}
+                          aria-label="Remove photo"
+                        >
+                          {deletingImageIds.has(img.id) ? "…" : <Trash2 size={13} />}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* New image previews */}
+                {newImagePreviews.length > 0 && (
+                  <div className="prop-photos-grid">
+                    {newImagePreviews.map((src, idx) => (
+                      <div key={idx} className="prop-photo-thumb prop-photo-thumb--new">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={src} alt={`New photo ${idx + 1}`} />
+                        <button
+                          type="button"
+                          className="prop-photo-delete"
+                          onClick={() => removeNewImage(idx)}
+                          aria-label="Remove photo"
+                        >
+                          <X size={13} />
+                        </button>
+                        <span className="prop-photo-new-badge">New</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Upload button */}
+                <label className="prop-photos-upload-btn">
+                  <Upload size={15} aria-hidden />
+                  Add photos
+                  <input
+                    ref={photoInputRef}
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    className="prop-photos-file-input"
+                    onChange={handlePhotoChange}
+                  />
+                </label>
+                <p className="prop-photos-hint">JPG, PNG, WebP — multiple files allowed.</p>
+              </div>
+
               {propError && <p className="form-error">{propError}</p>}
               <div className="host-form-actions">
-                <button className="secondary-link" type="button" onClick={() => setShowPropForm(false)}>
+                <button className="secondary-link" type="button" onClick={closePropForm}>
                   Cancel
                 </button>
                 <button className="primary-link auth-submit" type="submit" disabled={savingProp}>
-                  {savingProp ? "Saving…" : "Add property"}
+                  {savingProp
+                    ? (newImageFiles.length > 0 ? "Uploading…" : "Saving…")
+                    : (editingPropId !== null ? "Save changes" : "Add property")}
                 </button>
               </div>
             </form>

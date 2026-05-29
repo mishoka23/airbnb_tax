@@ -3,13 +3,14 @@ import datetime as dt
 from icalendar import Calendar
 from rest_framework import status, viewsets
 from rest_framework.exceptions import PermissionDenied
-from rest_framework.parsers import MultiPartParser
+from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.properties.models import ExternalCalendarConnection, Property, Reservation
+from apps.properties.models import ExternalCalendarConnection, Property, PropertyImage, Reservation
 from apps.properties.serializers import (
     ExternalCalendarConnectionSerializer,
+    PropertyImageSerializer,
     PropertySerializer,
     ReservationSerializer,
 )
@@ -102,7 +103,7 @@ class PropertyViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        queryset = Property.objects.select_related("host").all()
+        queryset = Property.objects.select_related("host").prefetch_related("images").all()
         if user.is_platform_admin:
             return queryset
         if not user.is_approved:
@@ -115,6 +116,26 @@ class PropertyViewSet(viewsets.ModelViewSet):
         if not self.request.user.is_platform_admin and not self.request.user.is_approved:
             raise PermissionDenied("Account must be approved before creating properties.")
         serializer.save(host=self.request.user)
+
+
+class PropertyImageViewSet(viewsets.ModelViewSet):
+    serializer_class = PropertyImageSerializer
+    parser_classes = [MultiPartParser, FormParser]
+    http_method_names = ["get", "post", "delete", "head", "options"]
+
+    def get_queryset(self):
+        user = self.request.user
+        if user.is_platform_admin:
+            return PropertyImage.objects.select_related("property").all()
+        return PropertyImage.objects.filter(property__host=user).select_related("property")
+
+    def perform_create(self, serializer):
+        prop = serializer.validated_data["property"]
+        if not self.request.user.is_platform_admin and not self.request.user.is_approved:
+            raise PermissionDenied("Account must be approved before uploading images.")
+        if not self.request.user.is_platform_admin and prop.host_id != self.request.user.id:
+            raise PermissionDenied("You can only add images to your own properties.")
+        serializer.save()
 
 
 class ExternalCalendarConnectionViewSet(HostOwnedQuerysetMixin, viewsets.ModelViewSet):
